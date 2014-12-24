@@ -1,0 +1,16 @@
+#version 130
+
+in vec2 in_pos;
+
+out vec3 vs_out_color;
+out vec2 vs_out_point_pos;
+
+uniform mat4 mvp;
+uniform float time;
+
+void main() {
+    gl_Position = mvp * vec4(in_pos, 0, 1);
+
+    vs_out_point_pos = in_pos;
+    vs_out_color = vec3(abs(sin(3 * time)), abs(sin(time + in_pos.x)), 0);
+}

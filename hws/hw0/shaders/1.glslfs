@@ -1,0 +1,21 @@
+#version 130
+
+in vec3 vs_out_color;
+in vec2 vs_out_point_pos;
+
+out vec3 o_color;
+
+bool is_odd(int num) {
+    return mod(num, 2) != 0;
+}
+
+void main() {
+    const int cell_size = 10;
+    int row_num = int(gl_FragCoord.y) / cell_size;
+    int col_num = int(gl_FragCoord.x) / cell_size;
+    if(is_odd(row_num) && is_odd(col_num) || !is_odd(row_num) && !is_odd(col_num)) {
+        o_color = vec3(1.0f, 1.0f, 1.0f);
+    } else {
+        o_color = vec3(0.0f, 0.0f, 0.0f);
+    }
+}
