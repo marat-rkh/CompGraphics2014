@@ -5,11 +5,16 @@
 #include "model.h"
 
 struct triangle {
-    const vec2 v1, v2, v3;
+    const vec2 v1;
+    const vec2 v2;
+    const vec2 v3;
 
     triangle(const vec2& v1, const vec2& v2, const vec2& v3)
-        : v1(v1), v2(v2), v3(v3)
+        : v1(v1)
+        , v2(v2)
+        , v3(v3)
     {}
+
     vec2 centroid() const {
         return (v1 + v2 + v3) / 3.0f;
     }
@@ -33,33 +38,32 @@ public:
     }
 
     void change_mode() {
-        if (mode_ == NORMALS) {
-            mode_ = FUNC;
-        } else {
-            mode_ = NORMALS;
-        }
+        mode_ = mode_ == NORMALS ? FUNC : NORMALS;
     }
 
 private:
     void draw_frame(float time_from_start);
     void create_tw_bar();
     void init_buffer();
-    void init(string const& vs_file, string const& fs_file);
-    void refresh(mat4 m);
+    void init_shaders(string const& vs_file, string const& fs_file);
+    void update_color_params(mat4 m);
 
-    bool   wireframe_;
-    triangle triangle_;
-    float  cell_size_;
+    bool      wireframe_;
+    triangle  triangle_;
+    float     cell_size_;
     ColorMode mode_;
 
-    GLuint vs_, fs_, program_;
+    GLuint vs_;
+    GLuint fs_;
+    GLuint program_;
     GLuint vx_buf_;
     quat   rotation_by_control_;
 
     vvec3 data_;
     Model model_;
 
-    float v_, k_;
+    float v_;
+    float k_;
     vec3 center_;
     float max_;
 };

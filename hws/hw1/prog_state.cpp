@@ -31,7 +31,8 @@ ProgState::ProgState()
         data_.push_back(model_.normals[i]);
     }
 
-    init(VERTEX_SHADER, FRAGMENT_SHADER);
+    init_shaders(VERTEX_SHADER, FRAGMENT_SHADER);
+    init_buffer();
 }
 
 ProgState::~ProgState() {
@@ -62,29 +63,11 @@ void ProgState::create_tw_bar() {
                " label='Object orientation' opened=true help='Change the object orientation.' ");
 }
 
-void ProgState::refresh(mat4 m) {
-    for (size_t i = 0; i < model_.vertices_count(); ++i) {
-        center_ += model_.vertices[i];
-    }
-
-    center_ = center_ / float(model_.vertices_count());
-
-    for (size_t i = 0; i < model_.vertices_count(); ++i) {
-        if (glm::length(center_ - model_.vertices[i]) > max_) {
-            max_ = glm::length(center_ - model_.vertices[i]);
-        }
-    }
-
-    center_ = vec3(m * vec4(center_, 1));
-}
-
-void ProgState::init(string const& vs_file, string const& fs_file) {
+void ProgState::init_shaders(string const& vs_file, string const& fs_file) {
     vs_ = create_shader(GL_VERTEX_SHADER  , vs_file.c_str());
     fs_ = create_shader(GL_FRAGMENT_SHADER, fs_file.c_str());
 
     program_ = create_program(vs_, fs_);
-
-    init_buffer();
 }
 
 void ProgState::init_buffer() {
@@ -111,7 +94,7 @@ void ProgState::draw_frame( float time_from_start ) {
     mat4 const modelview        = view * full_rotate;
     mat4 const mvp              = proj * modelview;
 
-    refresh(modelview); //or refresh(mat4(1.0f));
+    update_color_params(modelview); //or refresh(mat4(1.0f));
 
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LEQUAL);
@@ -126,8 +109,8 @@ void ProgState::draw_frame( float time_from_start ) {
     GLuint const mvp_location = glGetUniformLocation(program_, "mvp");
     glUniformMatrix4fv(mvp_location, 1, GL_FALSE, &mvp[0][0]);
 
-    GLuint const is_skeleton_location = glGetUniformLocation(program_, "is_skeleton");
-    glUniform1i(is_skeleton_location, false);
+    GLuint const is_wireframe_location = glGetUniformLocation(program_, "is_wireframe");
+    glUniform1i(is_wireframe_location, false);
 
     GLuint const T_location = glGetUniformLocation(program_, "T");
     glUniform1f(T_location, time_from_start);
@@ -147,8 +130,7 @@ void ProgState::draw_frame( float time_from_start ) {
     GLuint const func_mode_location = glGetUniformLocation(program_, "func_mode");
     if (mode_ == NORMALS) {
         glUniform1i(func_mode_location, false);
-    }
-    else {
+    } else {
         glUniform1i(func_mode_location, true);
     }
 
@@ -170,8 +152,8 @@ void ProgState::draw_frame( float time_from_start ) {
 
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
-        GLboolean const is_skeleton_location = glGetUniformLocation(program_, "is_skeleton");
-        glUniform1i(is_skeleton_location, true);
+        GLboolean const is_wireframe_location = glGetUniformLocation(program_, "is_wireframe");
+        glUniform1i(is_wireframe_location, true);
 
         glDrawArrays(GL_TRIANGLES, 0, data_.size() / 2);
         glDisable(GL_POLYGON_OFFSET_FILL);
@@ -180,4 +162,18 @@ void ProgState::draw_frame( float time_from_start ) {
     glDisableVertexAttribArray(pos_location);
     glDisableVertexAttribArray(color_location);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+void ProgState::update_color_params(mat4 m) {
+    for (size_t i = 0; i < model_.vertices_count(); ++i) {
+        center_ += model_.vertices[i];
+    }
+    center_ = center_ / float(model_.vertices_count());
+
+    for (size_t i = 0; i < model_.vertices_count(); ++i) {
+        if (glm::length(center_ - model_.vertices[i]) > max_) {
+            max_ = glm::length(center_ - model_.vertices[i]);
+        }
+    }
+    center_ = vec3(m * vec4(center_, 1));
 }

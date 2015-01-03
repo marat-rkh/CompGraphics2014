@@ -105,8 +105,7 @@ int main( int argc, char ** argv ) {
         // Вход в главный цикл приложения
         glutMainLoop();
     }
-    catch( std::exception const & except )
-    {
+    catch( std::exception const & except ) {
         std::cout << except.what() << endl;
         return 1;
     }
