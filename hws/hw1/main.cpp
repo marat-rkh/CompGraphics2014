@@ -4,10 +4,10 @@
 #define APIENTRY
 #endif
 
-unique_ptr<ProgState> g_sample;
+unique_ptr<ProgState> prog_state_ptr;
 
 // отрисовка кадра
-void display_func() { g_sample->draw(); }
+void display_func() { prog_state_ptr->draw(); }
 
 // Переисовка кадра в отсутствии других сообщений
 void idle_func() { glutPostRedisplay(); }
@@ -31,7 +31,7 @@ void reshape_func( int width, int height ) {
 }
 
 // Очищаем все ресурсы, пока контекст ещё не удалён
-void close_func() { g_sample.reset(); }
+void close_func() { prog_state_ptr.reset(); }
 
 // callback на различные сообщения от OpenGL
 void APIENTRY gl_debug_proc(GLenum         //source
@@ -101,7 +101,7 @@ int main( int argc, char ** argv ) {
 
     try {
         // Создание класса-примера
-        g_sample.reset(new ProgState());
+        prog_state_ptr.reset(new ProgState());
         // Вход в главный цикл приложения
         glutMainLoop();
     }

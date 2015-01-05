@@ -1,0 +1,13 @@
+#version 130
+
+in vec2 vertex_pos;
+in vec2 vx_tex_coords;
+
+out vec2 frag_tex_coords;
+
+uniform mat4 mvp;
+
+void main() {
+    gl_Position = mvp * vec4(vertex_pos, 0, 1);
+    frag_tex_coords = vx_tex_coords;
+}
