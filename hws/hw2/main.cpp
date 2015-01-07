@@ -3,39 +3,240 @@
 #include <SOIL.h>
 #include "utils.h"
 
-struct vertex_attr {
-    const char* name;
-    GLint size;
-    GLenum type;
-    GLboolean normalized;
-    GLsizei stride; // offset to next value
-    GLvoid* pointer;
-};
+enum geom_obj { PLANE, CYLINDER, SPHERE };
 
 struct program_state {
+    quat rotation_by_control;
+
+    program_state()
+        : cur_figure(CYLINDER)
+        , wireframe_mode(false)
+    {
+        init_data();
+    }
+
+    // this function must be called before main loop but after
+    // gl libs init functions
+    void init() {
+        set_data_buffer();
+        init_textures();
+        set_draw_configs();
+    }
+
+    void on_display_event() {
+        set_shaders();
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        draw();
+    }
+
+    void next_figure() {
+        if(cur_figure == PLANE) {
+            cur_figure = CYLINDER;
+//        } else if(cur_figure == CYLINDER) {
+//            cur_figure = SPHERE;
+        } else {
+            cur_figure = PLANE;
+        }
+        set_data_buffer();
+    }
+
+    void switch_polygon_mode() {
+        wireframe_mode = !wireframe_mode;
+        set_draw_configs();
+    }
+
+    ~program_state() {
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        glDeleteProgram(program);
+        glDeleteShader(vx_shader);
+        glDeleteShader(frag_shader);
+        glDeleteBuffers(1, &vx_buffer);
+    }
+
+private:
+    geom_obj cur_figure;
+    bool wireframe_mode;
+
     GLuint vx_shader;
     GLuint frag_shader;
     GLuint program;
 
     GLuint vx_buffer;
 
-    quat rotation_by_control;
+    size_t DATA_PLANE_SIZE;
+    vector<vec2> DATA_PLANE;
 
-    static size_t const DATA_PLANE_SIZE = 8 * sizeof(vec2);
-    vec2 const DATA_PLANE[DATA_PLANE_SIZE] = {
-        vec2(-8.0f, 8.0f), vec2(0.0f, 0.0f),
-        vec2(8.0f, 8.0f), vec2(1.0f, 0.0f),
-        vec2(8.0f, -8.0f), vec2(1.0f, 1.0f),
-        vec2(-8.0f, -8.0f), vec2(0.0f, 1.0f)
-    };
-
-    const char* VERTEX_SHADER_PATH = "..//shaders//0.glslvs";
-    const char* FRAGMENT_SHADER_PATH = "..//shaders//0.glslfs";
+    const char* PLANE_GLSLVS_PATH = "..//shaders//plane.glslvs";
+    const char* PLANE_GLSLFS_PATH = "..//shaders//plane.glslfs";
     const char* TEXTURE_PATH = "..//resources//wall.png";
 
-    vertex_attr const VERTEX_POS = { "vertex_pos", 2, GL_FLOAT, GL_FALSE, 2 * sizeof(vec2), 0 };
-    vertex_attr const VX_TEX_COORDS = { "vx_tex_coords", 2, GL_FLOAT, GL_FALSE,
-                                        2 * sizeof(vec2), (void *)(sizeof(vec2)) };
+    vertex_attr const PLANE_VERTEX_POS = { "vertex_pos", 2, GL_FLOAT, GL_FALSE, 2 * sizeof(vec2), 0 };
+    vertex_attr const PLANE_VERTEX_TEXCOORDS = { "vertex_texcoords", 2, GL_FLOAT, GL_FALSE,
+                                                 2 * sizeof(vec2), (void *)(sizeof(vec2)) };
+
+    float const RADIUS = 0.5;
+    size_t DATA_CYLINDER_SIZE;
+    vector<vec3> DATA_CYLINDER;
+
+    const char* CYLINDER_GLSLVS_PATH = "..//shaders//cylinder.glslvs";
+    const char* CYLINDER_GLSLFS_PATH = "..//shaders//cylinder.glslfs";
+
+    vertex_attr const CYLINDER_VERTEX_POS = { "vertex_pos", 3, GL_FLOAT, GL_FALSE,
+                                              sizeof(vec3), 0 };
+    vertex_attr const CYLINDER_VERTEX_TEXCOORDS = { "vertex_texcoords", 3, GL_FLOAT,
+                                                    GL_FALSE, sizeof(vec3),
+                                                    (void *)(sizeof(vec3) * DATA_CYLINDER.size() / 2) };
+
+    GLsizeiptr cur_data_size() {
+        switch (cur_figure) {
+        case PLANE: return DATA_PLANE_SIZE;
+        case CYLINDER: return DATA_CYLINDER_SIZE;
+        case SPHERE: return 0;
+        }
+    }
+
+    GLvoid const* cur_data() {
+        switch (cur_figure) {
+        case PLANE: return &(DATA_PLANE[0]);
+        case CYLINDER: return &(DATA_CYLINDER[0]);
+        case SPHERE: return 0;
+        }
+    }
+
+    char const* cur_vertex_shader_path() {
+        switch (cur_figure) {
+        case PLANE: return PLANE_GLSLVS_PATH;
+        case CYLINDER: return CYLINDER_GLSLVS_PATH;
+        case SPHERE: return "";
+        }
+    }
+
+    char const* cur_frag_shader_path() {
+        switch (cur_figure) {
+        case PLANE: return PLANE_GLSLFS_PATH;
+        case CYLINDER: return CYLINDER_GLSLFS_PATH;
+        case SPHERE: return "";
+        }
+    }
+
+    void init_data() {
+        switch (cur_figure) {
+        case PLANE: init_plane(); break;
+        case CYLINDER: init_cylinder(); break;
+        case SPHERE: cout << "sphere init not implemented!!!!\n"; break;
+        }
+    }
+
+    void init_plane() {
+        DATA_PLANE = {
+            vec2(-1.0f, 1.0f), vec2(0.0f, 0.0f),
+            vec2(1.0f, 1.0f), vec2(1.0f, 0.0f),
+            vec2(1.0f, -1.0f), vec2(1.0f, 1.0f),
+            vec2(-1.0f, -1.0f), vec2(0.0f, 1.0f)
+        };
+        DATA_PLANE_SIZE = DATA_PLANE.size() * sizeof(vec2);
+    }
+
+    void init_cylinder() {
+        for(size_t fi = 0; fi <= 360; fi += 60) {
+            float rad = fi * M_PI / 180.0f;
+            float x = RADIUS * cos(rad);
+            float y = RADIUS * sin(rad);
+            DATA_CYLINDER.push_back(vec3(x, y, -0.5));
+            DATA_CYLINDER.push_back(vec3(x, y, 0.5));
+        }
+        for(size_t fi = 0; fi <= 360; fi += 60) {
+            DATA_CYLINDER.push_back(vec3(fi / 360.0f, 1.0f, 0.0f));
+            DATA_CYLINDER.push_back(vec3(fi / 360.0f, 0.0f, 0.0f));
+        }
+        DATA_CYLINDER_SIZE = DATA_CYLINDER.size() * sizeof(vec3);
+        cout << "Cylinder points num: " << DATA_CYLINDER.size() << endl;
+    }
+
+    void set_data_buffer() {
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        glGenBuffers(1, &vx_buffer);
+        glBindBuffer(GL_ARRAY_BUFFER, vx_buffer);
+        glBufferData(GL_ARRAY_BUFFER, cur_data_size(), cur_data(), GL_STATIC_DRAW);
+    }
+
+    void init_textures() {
+        int width, height;
+        unsigned char* image = SOIL_load_image(TEXTURE_PATH,
+                                               &width,
+                                               &height,
+                                               0, 0);
+        if(!image) { throw msg_exception(SOIL_last_result()); }
+        GLuint textureID;
+        glGenTextures(1, &textureID);
+        glBindTexture(GL_TEXTURE_2D, textureID);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, image);
+        SOIL_free_image_data(image);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    }
+
+    void set_draw_configs() {
+        glClearColor(0.2f, 0.2f, 0.2f, 1);
+        glClearDepth(1);
+        int mode = wireframe_mode ? GL_LINE : GL_FILL;
+        glPolygonMode(GL_FRONT_AND_BACK, mode);
+    }
+
+    void set_shaders() {
+        glDeleteProgram(program);
+        glDeleteShader(vx_shader);
+        glDeleteShader(frag_shader);
+
+        vx_shader = create_shader(GL_VERTEX_SHADER, cur_vertex_shader_path());
+        frag_shader = create_shader(GL_FRAGMENT_SHADER, cur_frag_shader_path());
+        program = create_program(vx_shader, frag_shader);
+
+        set_shader_attrs();
+    }
+
+    void set_shader_attrs() {
+        glUseProgram(program);
+
+        switch (cur_figure) {
+        case PLANE: set_plane_shader_attrs(); break;
+        case CYLINDER: set_cylinder_shader_attrs(); break;
+        case SPHERE: set_sphere_shader_attrs(); break;
+        }
+
+        GLuint location = glGetUniformLocation(program, "mvp");
+        mat4 mvp = utils::calculate_mvp_matrix(rotation_by_control);
+        glUniformMatrix4fv(location, 1, GL_FALSE, &mvp[0][0]);
+    }
+
+    void set_plane_shader_attrs() {
+        utils::set_vertex_attr_ptr(program, PLANE_VERTEX_POS);
+        utils::set_vertex_attr_ptr(program, PLANE_VERTEX_TEXCOORDS);
+    }
+
+    void set_cylinder_shader_attrs() {
+        utils::set_vertex_attr_ptr(program, CYLINDER_VERTEX_POS);
+        utils::set_vertex_attr_ptr(program, CYLINDER_VERTEX_TEXCOORDS);
+    }
+
+    void set_sphere_shader_attrs() {
+        cout << "set_sphere_shader_attrs not implemented !!! \n";
+    }
+
+    void draw() {
+        switch (cur_figure) {
+        case PLANE: glDrawArrays(GL_TRIANGLE_FAN, 0, DATA_PLANE.size() / 2); break;
+        case CYLINDER: draw_cylinder(); break;
+        case SPHERE: cout << "sphere draw func not set!!!!\n"; break;
+        }
+    }
+
+    void draw_cylinder() {
+        for(size_t i = 0; i < DATA_CYLINDER.size() / 2; i += 2) {
+            glDrawArrays(GL_QUAD_STRIP, i, (i + 4) % DATA_CYLINDER.size());
+        }
+    }
 };
 
 // global, because display_func callback needs it
@@ -71,91 +272,10 @@ void basic_init(int argc, char ** argv) {
     }
 }
 
-void init_shaders(program_state& prog_state) {
-    prog_state.vx_shader = create_shader(GL_VERTEX_SHADER  , prog_state.VERTEX_SHADER_PATH);
-    prog_state.frag_shader = create_shader(GL_FRAGMENT_SHADER, prog_state.FRAGMENT_SHADER_PATH);
-    prog_state.program = create_program(prog_state.vx_shader, prog_state.frag_shader);
-}
-
-void init_data_buffer(program_state& prog_state) {
-    glGenBuffers(1, &prog_state.vx_buffer);
-    glBindBuffer(GL_ARRAY_BUFFER, prog_state.vx_buffer);
-    glBufferData(GL_ARRAY_BUFFER, program_state::DATA_PLANE_SIZE, prog_state.DATA_PLANE, GL_STATIC_DRAW);
-}
-
-void init_textures(program_state& prog_state) {
-    int width, height;
-    unsigned char* image = SOIL_load_image(prog_state.TEXTURE_PATH,
-                                           &width,
-                                           &height,
-                                           0, 0);
-    if(!image) { throw msg_exception(SOIL_last_result()); }
-    GLuint textureID;
-    glGenTextures(1, &textureID);
-    glBindTexture(GL_TEXTURE_2D, textureID);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, image);
-    SOIL_free_image_data(image);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-}
-
-void set_static_shaders_attrs(program_state const& prog_state) {
-    glUseProgram(prog_state.program);
-
-    vertex_attr attr = prog_state.VERTEX_POS;
-    GLuint location = glGetAttribLocation(prog_state.program, attr.name);
-    glEnableVertexAttribArray(location);
-    glVertexAttribPointer(location, attr.size, attr.type, attr.normalized, attr.stride, attr.pointer);
-
-    attr = prog_state.VX_TEX_COORDS;
-    location = glGetAttribLocation(prog_state.program, attr.name);
-    glEnableVertexAttribArray(location);
-    glVertexAttribPointer(location, attr.size, attr.type, attr.normalized, attr.stride, attr.pointer);
-}
-
-mat4 calculate_mvp_matrix(program_state const& prog_state) {
-    float const w = (float)glutGet(GLUT_WINDOW_WIDTH);
-    float const h = (float)glutGet(GLUT_WINDOW_HEIGHT);
-    // строим матрицу проекции с aspect ratio (отношением сторон) таким же, как у окна
-    mat4 const proj = perspective(45.0f, w / h, 0.1f, 100.0f);
-    // преобразование из СК мира в СК камеры
-    mat4 const view = lookAt(vec3(0, 0, 50), vec3(0, 0, 0), vec3(0, 1, 0));
-    mat4 const modelview = view * mat4_cast(prog_state.rotation_by_control);
-    return proj * modelview;
-}
-
-void set_dynamic_shader_attrs(program_state const& prog_state) {
-    glUseProgram(prog_state.program);
-
-    GLuint location = glGetUniformLocation(prog_state.program, "mvp");
-    mat4 mvp = calculate_mvp_matrix(prog_state);
-    glUniformMatrix4fv(location, 1, GL_FALSE, &mvp[0][0]);
-}
-
-void set_draw_configs() {
-    glClearColor(0.2f, 0.2f, 0.2f, 1);
-    glClearDepth(1);
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-}
-
-void remove_data(program_state const& prog_state) {
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glDeleteProgram(prog_state.program);
-    glDeleteShader(prog_state.vx_shader);
-    glDeleteShader(prog_state.frag_shader);
-    glDeleteBuffers(1, &prog_state.vx_buffer);
-
-    TwDeleteAllBars();
-    TwTerminate();
-}
-
 // == callbacks ==
 // отрисовка кадра
 void display_func() {
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    set_dynamic_shader_attrs(prog_state);
-    glDrawArrays(GL_QUADS, 0, 4);
+    prog_state.on_display_event();
     TwDraw();
     glutSwapBuffers();
 }
@@ -182,7 +302,7 @@ void reshape_func(int width, int height) {
 }
 
 // Очищаем все ресурсы, пока контекст ещё не удалён
-void close_func() {}
+void close_func() {  }
 
 void register_callbacks() {
     // подписываемся на оконные события
@@ -202,6 +322,16 @@ void register_callbacks() {
 
 void TW_CALL toggle_fullscreen_callback( void * ) { glutFullScreenToggle(); }
 
+void next_figure_callback(void* prog_state_wrapper) {
+    program_state* ps = static_cast<program_state*>(prog_state_wrapper);
+    ps->next_figure();
+}
+
+void switch_polygon_mode(void* prog_state_wrapper) {
+    program_state* ps = static_cast<program_state*>(prog_state_wrapper);
+    ps->switch_polygon_mode();
+}
+
 void create_controls(program_state& prog_state) {
     TwInit(TW_OPENGL, NULL);
 
@@ -211,6 +341,15 @@ void create_controls(program_state& prog_state) {
                 "label='Toggle fullscreen mode' key=f");
     TwAddVarRW(bar, "ObjRotation", TW_TYPE_QUAT4F, &prog_state.rotation_by_control,
                "label='Object orientation' opened=true help='Change the object orientation.'");
+    TwAddButton(bar, "Next figure", next_figure_callback, &prog_state,
+                "label='Draw next figure' key=n");
+    TwAddButton(bar, "Switch wireframe mode", switch_polygon_mode, &prog_state,
+                "label='Switch wireframe mode' key=w");
+}
+
+void remove_controls() {
+    TwDeleteAllBars();
+    TwTerminate();
 }
 
 int main( int argc, char ** argv ) {
@@ -218,19 +357,14 @@ int main( int argc, char ** argv ) {
         basic_init(argc, argv);
         register_callbacks();
         create_controls(prog_state);
-
-        init_shaders(prog_state);
-        init_data_buffer(prog_state);
-        init_textures(prog_state);
-        set_static_shaders_attrs(prog_state);
-        set_draw_configs();
+        prog_state.init();
 
         glutMainLoop();
     } catch(std::exception const & except) {
         cout << except.what() << endl;
-        remove_data(prog_state);
+        remove_controls();
         return 1;
     }
-    remove_data(prog_state);
+    remove_controls();
     return 0;
 }

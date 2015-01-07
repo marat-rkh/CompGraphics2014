@@ -1,0 +1,11 @@
+#version 130
+
+in vec2 frag_tex_coords;
+uniform sampler2D texture_sampler;
+
+out vec3 color;
+
+void main() {
+    color = texture(texture_sampler, frag_tex_coords).rgb;
+    // color = vec3(255, 255, 0);
+}
