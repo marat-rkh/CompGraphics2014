@@ -7,9 +7,10 @@ out vec3 vs_out_color;
 out vec3 local_coords;
 
 uniform mat4 mvp;
+uniform mat4 mv;
 
 void main() {
-    vec4 in_color_transformed = mvp * vec4(in_color, 1);
+    vec4 in_color_transformed = mv * vec4(in_color, 1);
     vs_out_color = vec3(in_color_transformed.y, in_color_transformed.y, in_color_transformed.y);
 
     gl_Position  = mvp * vec4(in_pos, 1);

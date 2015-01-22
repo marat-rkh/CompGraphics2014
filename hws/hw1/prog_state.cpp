@@ -109,6 +109,9 @@ void ProgState::draw_frame( float time_from_start ) {
     GLuint const mvp_location = glGetUniformLocation(program_, "mvp");
     glUniformMatrix4fv(mvp_location, 1, GL_FALSE, &mvp[0][0]);
 
+    GLuint const mv_location = glGetUniformLocation(program_, "mv");
+    glUniformMatrix4fv(mv_location, 1, GL_FALSE, &modelview[0][0]);
+
     GLuint const is_wireframe_location = glGetUniformLocation(program_, "is_wireframe");
     glUniform1i(is_wireframe_location, false);
 
