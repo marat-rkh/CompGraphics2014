@@ -1,7 +1,8 @@
 ﻿#include "common.h"
 #include "shader.h"
-#include <SOIL.h>
 #include "utils.h"
+#include <FreeImage.h>
+#include "model.h"
 
 enum geom_obj { PLANE, CYLINDER, SPHERE };
 
@@ -9,7 +10,7 @@ struct program_state {
     quat rotation_by_control;
 
     program_state()
-        : cur_figure(CYLINDER)
+        : cur_figure(PLANE)
         , wireframe_mode(false)
     {
         init_data();
@@ -161,17 +162,12 @@ private:
     }
 
     void init_textures() {
-        int width, height;
-        unsigned char* image = SOIL_load_image(TEXTURE_PATH,
-                                               &width,
-                                               &height,
-                                               0, 0);
-        if(!image) { throw msg_exception(SOIL_last_result()); }
+        texture_data tex_data = utils::load_texture(TEXTURE_PATH);
         GLuint textureID;
         glGenTextures(1, &textureID);
         glBindTexture(GL_TEXTURE_2D, textureID);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, image);
-        SOIL_free_image_data(image);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, tex_data.width, tex_data.height,
+                     0, tex_data.format, GL_UNSIGNED_BYTE, tex_data.data_ptr);
 
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
