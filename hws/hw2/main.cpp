@@ -4,6 +4,7 @@
 #include <FreeImage.h>
 
 enum geom_obj { QUAD, CYLINDER, SPHERE };
+enum filtering_mode { NEAREST, LINEAR, MIPMAP };
 
 struct draw_data {
     vector<GLfloat> vertices;
@@ -24,6 +25,7 @@ struct program_state {
     program_state()
         : wireframe_mode(false)
         , cur_obj(QUAD)
+        , filter(NEAREST)
     {}
 
     // this function must be called before main loop but after
@@ -35,6 +37,7 @@ struct program_state {
         set_shaders();
         set_draw_configs();
         init_textures();
+        set_texture_filtration();
         set_data_buffer();
     }
 
@@ -45,12 +48,10 @@ struct program_state {
     }
 
     void next_figure() {
-        if(cur_obj == QUAD) {
-            cur_obj = CYLINDER;
-        } else if(cur_obj == CYLINDER) {
-            cur_obj = SPHERE;
-        } else {
-            cur_obj = QUAD;
+        switch(cur_obj) {
+        case QUAD: cur_obj = CYLINDER; break;
+        case CYLINDER: cur_obj = SPHERE; break;
+        case SPHERE: cur_obj = QUAD; break;
         }
         set_data_buffer();
     }
@@ -58,6 +59,16 @@ struct program_state {
     void switch_polygon_mode() {
         wireframe_mode = !wireframe_mode;
         set_draw_configs();
+        on_display_event();
+    }
+
+    void next_filtering_mode() {
+        switch(filter) {
+        case NEAREST: filter = LINEAR; break;
+        case LINEAR: filter = MIPMAP; break;
+        case MIPMAP: filter = NEAREST; break;
+        }
+        set_texture_filtration();
         on_display_event();
     }
 
@@ -72,6 +83,7 @@ struct program_state {
 private:
     bool wireframe_mode;
     geom_obj cur_obj;
+    filtering_mode filter;
 
     GLuint vx_shader;
     GLuint frag_shader;
@@ -132,14 +144,29 @@ private:
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, tex_data.width, tex_data.height,
                      0, tex_data.format, GL_UNSIGNED_BYTE, tex_data.data_ptr);
 
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-
         sampler_id  = glGetUniformLocation(program, "texture_sampler");
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, texture_id);
         glUniform1i(sampler_id, 0);
+    }
+
+    void set_texture_filtration() {
+        switch (filter) {
+        case NEAREST:
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            break;
+        case LINEAR:
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            break;
+        case MIPMAP:
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+            glGenerateMipmap(GL_TEXTURE_2D);
+            break;
+        }
     }
 
     void set_data_buffer() {
@@ -266,11 +293,16 @@ void switch_polygon_mode(void* prog_state_wrapper) {
     ps->switch_polygon_mode();
 }
 
+void next_filtration_callback(void* prog_state_wrapper) {
+    program_state* ps = static_cast<program_state*>(prog_state_wrapper);
+    ps->next_filtering_mode();
+}
+
 void create_controls(program_state& prog_state) {
     TwInit(TW_OPENGL, NULL);
 
     TwBar *bar = TwNewBar("Parameters");
-    TwDefine("Parameters size='500 160' color='70 100 120' valueswidth=220 iconpos=topleft");
+    TwDefine("Parameters size='500 180' color='70 100 120' valueswidth=220 iconpos=topleft");
     TwAddButton(bar, "Fullscreen toggle", toggle_fullscreen_callback, NULL,
                 "label='Toggle fullscreen mode' key=f");
     TwAddVarRW(bar, "ObjRotation", TW_TYPE_QUAT4F, &prog_state.rotation_by_control,
@@ -279,6 +311,8 @@ void create_controls(program_state& prog_state) {
                 "label='Draw next figure' key=n");
     TwAddButton(bar, "Switch wireframe mode", switch_polygon_mode, &prog_state,
                 "label='Switch wireframe mode' key=w");
+    TwAddButton(bar, "Next filtration mode", next_filtration_callback, &prog_state,
+                "label='Next filtration mode' key=t");
 }
 
 void remove_controls() {
