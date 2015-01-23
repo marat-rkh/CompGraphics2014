@@ -58,6 +58,7 @@ struct program_state {
     void switch_polygon_mode() {
         wireframe_mode = !wireframe_mode;
         set_draw_configs();
+        on_display_event();
     }
 
     ~program_state() {
@@ -119,6 +120,9 @@ private:
         glClearColor(0.0f, 0.0f, 0.4f, 0.0f);
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LESS);
+
+        int mode = wireframe_mode ? GL_LINE : GL_FILL;
+        glPolygonMode(GL_FRONT_AND_BACK, mode);
     }
 
     void init_textures() {
