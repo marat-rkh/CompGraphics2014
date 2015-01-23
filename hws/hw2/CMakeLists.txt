@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 2.8)
 
 project(sample_0)
 
-set(cpps main.cpp shader.cpp)
-set(headers shader.h common.h utils.h)
+set(cpps main.cpp shader.cpp tiny_obj_loader.cc)
+set(headers shader.h common.h utils.h  tiny_obj_loader.h)
 
 IF (WIN32)
    set(EXTERNAL_LIBS ${PROJECT_SOURCE_DIR}/../../ext CACHE STRING "external libraries location")
@@ -43,7 +43,7 @@ IF (WIN32)
         "${PROJECT_SOURCE_DIR}/shaders"
         $<TARGET_FILE_DIR:main>/shaders)
 ELSE (WIN32)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -std=c++11")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -std=c++11 -Wall")
 
     add_executable(main ${cpps} ${headers})
 	

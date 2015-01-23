@@ -5,6 +5,7 @@
 #include <string>
 #include "common.h"
 #include <FreeImage.h>
+#include "tiny_obj_loader.h"
 
 class msg_exception : public std::exception {
     std::string what_;
@@ -32,6 +33,10 @@ struct vertex_attr {
 
 class utils {
 public:
+    static void debug(std::string const& msg) {
+        cout << "->|DEBUG: " << msg << endl;
+    }
+
     static texture_data load_texture(char const* img_path) {
         FREE_IMAGE_FORMAT fif = FIF_UNKNOWN;
         FIBITMAP* dib(0);
@@ -70,13 +75,35 @@ public:
         return tex_data;
     }
 
+    static void read_obj_file(char const* obj_file_path, vector<GLfloat>& vertices,
+                              vector<GLfloat>& tex_mapping) {
+        vector<tinyobj::shape_t> shapes;
+        vector<tinyobj::material_t> materials;
+        string err = tinyobj::LoadObj(shapes, materials, obj_file_path);
+        if (!err.empty()) {
+            throw msg_exception("read_obj_file(): " + err);
+        }
+        if(shapes.size() < 1) {
+            throw msg_exception("read_obj_file(): input file contains no shapes");
+        }
+        for (size_t i = 0; i < shapes[0].mesh.indices.size(); ++i) {
+            int ind = shapes[0].mesh.indices[i];
+            vertices.push_back(shapes[0].mesh.positions[3 * ind + 0]);
+            vertices.push_back(shapes[0].mesh.positions[3 * ind + 1]);
+            vertices.push_back(shapes[0].mesh.positions[3 * ind + 2]);
+
+            tex_mapping.push_back(shapes[0].mesh.texcoords[2 * ind + 0]);
+            tex_mapping.push_back(shapes[0].mesh.texcoords[2 * ind + 1]);
+        }
+    }
+
     static mat4 calculate_mvp_matrix(quat const& rotation) {
         float const w = (float)glutGet(GLUT_WINDOW_WIDTH);
         float const h = (float)glutGet(GLUT_WINDOW_HEIGHT);
         // строим матрицу проекции с aspect ratio (отношением сторон) таким же, как у окна
         mat4 const proj = perspective(45.0f, w / h, 0.1f, 100.0f);
         // преобразование из СК мира в СК камеры
-        mat4 const view = lookAt(vec3(0, 0, 5), vec3(0, 0, 0), vec3(0, 1, 0));
+        mat4 const view = lookAt(vec3(4, 4, 4), vec3(0, 0, 0), vec3(0, 1, 0));
         mat4 const modelview = view * mat4_cast(rotation);
         return proj * modelview;
     }

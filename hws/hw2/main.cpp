@@ -2,41 +2,55 @@
 #include "shader.h"
 #include "utils.h"
 #include <FreeImage.h>
-#include "model.h"
 
-enum geom_obj { PLANE, CYLINDER, SPHERE };
+enum geom_obj { QUAD, CYLINDER, SPHERE };
+
+struct draw_data {
+    vector<GLfloat> vertices;
+    vector<GLfloat> tex_mapping;
+
+    size_t vertices_num() const { return vertices.size() / 3; }
+
+    void* vertices_data() { return vertices.data(); }
+    size_t vertices_data_size() const { return vertices.size() * sizeof(GLfloat); }
+
+    void* tex_mapping_data() { return tex_mapping.data(); }
+    size_t tex_mapping_data_size() const { return tex_mapping.size() * sizeof(GLfloat); }
+};
 
 struct program_state {
     quat rotation_by_control;
 
     program_state()
-        : cur_figure(PLANE)
-        , wireframe_mode(false)
-    {
-        init_data();
-    }
+        : wireframe_mode(false)
+        , cur_obj(QUAD)
+    {}
 
     // this function must be called before main loop but after
     // gl libs init functions
     void init() {
-        set_data_buffer();
-        init_textures();
+        utils::read_obj_file(QUAD_MODEL_PATH, quad.vertices, quad.tex_mapping);
+        utils::read_obj_file(CYLINDER_MODEL_PATH, cylinder.vertices, cylinder.tex_mapping);
+        utils::read_obj_file(SPHERE_MODEL_PATH, sphere.vertices, sphere.tex_mapping);
+        set_shaders();
         set_draw_configs();
+        init_textures();
+        set_data_buffer();
     }
 
     void on_display_event() {
-        set_shaders();
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         draw();
+        TwDraw();
+        glutSwapBuffers();
     }
 
     void next_figure() {
-        if(cur_figure == PLANE) {
-            cur_figure = CYLINDER;
-//        } else if(cur_figure == CYLINDER) {
-//            cur_figure = SPHERE;
+        if(cur_obj == QUAD) {
+            cur_obj = CYLINDER;
+        } else if(cur_obj == CYLINDER) {
+            cur_obj = SPHERE;
         } else {
-            cur_figure = PLANE;
+            cur_obj = QUAD;
         }
         set_data_buffer();
     }
@@ -55,183 +69,105 @@ struct program_state {
     }
 
 private:
-    geom_obj cur_figure;
     bool wireframe_mode;
+    geom_obj cur_obj;
 
     GLuint vx_shader;
     GLuint frag_shader;
     GLuint program;
 
     GLuint vx_buffer;
+    GLuint tex_buffer;
 
-    size_t DATA_PLANE_SIZE;
-    vector<vec2> DATA_PLANE;
+    GLuint sampler_id;
+    GLuint texture_id;
 
-    const char* PLANE_GLSLVS_PATH = "..//shaders//plane.glslvs";
-    const char* PLANE_GLSLFS_PATH = "..//shaders//plane.glslfs";
+    const char* QUAD_MODEL_PATH = "..//resources//quad.obj";
+    draw_data quad;
+
+    const char* CYLINDER_MODEL_PATH = "..//resources//cylinder.obj";
+    draw_data cylinder;
+
+    const char* SPHERE_MODEL_PATH = "..//resources//sphere.obj";
+    draw_data sphere;
+
     const char* TEXTURE_PATH = "..//resources//wall.png";
 
-    vertex_attr const PLANE_VERTEX_POS = { "vertex_pos", 2, GL_FLOAT, GL_FALSE, 2 * sizeof(vec2), 0 };
-    vertex_attr const PLANE_VERTEX_TEXCOORDS = { "vertex_texcoords", 2, GL_FLOAT, GL_FALSE,
-                                                 2 * sizeof(vec2), (void *)(sizeof(vec2)) };
+    const char* VERTEX_SHADER_PATH = "..//shaders//0.glslvs";
+    const char* FRAGMENT_SHADER_PATH = "..//shaders//0.glslfs";
 
-    float const RADIUS = 0.5;
-    size_t DATA_CYLINDER_SIZE;
-    vector<vec3> DATA_CYLINDER;
+    vertex_attr const VERTEX_POS = { "vertex_pos", 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0 };
+    vertex_attr const VERTEX_TEXCOORDS = { "vertex_texcoords", 2, GL_FLOAT,
+                                           GL_FALSE, 2 * sizeof(GLfloat), 0 };
 
-    const char* CYLINDER_GLSLVS_PATH = "..//shaders//cylinder.glslvs";
-    const char* CYLINDER_GLSLFS_PATH = "..//shaders//cylinder.glslfs";
-
-    vertex_attr const CYLINDER_VERTEX_POS = { "vertex_pos", 3, GL_FLOAT, GL_FALSE,
-                                              sizeof(vec3), 0 };
-    vertex_attr const CYLINDER_VERTEX_TEXCOORDS = { "vertex_texcoords", 3, GL_FLOAT,
-                                                    GL_FALSE, sizeof(vec3),
-                                                    (void *)(sizeof(vec3) * DATA_CYLINDER.size() / 2) };
-
-    GLsizeiptr cur_data_size() {
-        switch (cur_figure) {
-        case PLANE: return DATA_PLANE_SIZE;
-        case CYLINDER: return DATA_CYLINDER_SIZE;
-        case SPHERE: return 0;
+    draw_data& cur_draw_data() {
+        switch(cur_obj) {
+        case QUAD: return quad;
+        case CYLINDER: return cylinder;
+        case SPHERE: return sphere;
+        default: throw msg_exception("cur_obj is undefined");
         }
     }
 
-    GLvoid const* cur_data() {
-        switch (cur_figure) {
-        case PLANE: return &(DATA_PLANE[0]);
-        case CYLINDER: return &(DATA_CYLINDER[0]);
-        case SPHERE: return 0;
-        }
+    void set_shaders() {
+        vx_shader = create_shader(GL_VERTEX_SHADER, VERTEX_SHADER_PATH);
+        frag_shader = create_shader(GL_FRAGMENT_SHADER, FRAGMENT_SHADER_PATH);
+        program = create_program(vx_shader, frag_shader);
     }
 
-    char const* cur_vertex_shader_path() {
-        switch (cur_figure) {
-        case PLANE: return PLANE_GLSLVS_PATH;
-        case CYLINDER: return CYLINDER_GLSLVS_PATH;
-        case SPHERE: return "";
-        }
-    }
-
-    char const* cur_frag_shader_path() {
-        switch (cur_figure) {
-        case PLANE: return PLANE_GLSLFS_PATH;
-        case CYLINDER: return CYLINDER_GLSLFS_PATH;
-        case SPHERE: return "";
-        }
-    }
-
-    void init_data() {
-        switch (cur_figure) {
-        case PLANE: init_plane(); break;
-        case CYLINDER: init_cylinder(); break;
-        case SPHERE: cout << "sphere init not implemented!!!!\n"; break;
-        }
-    }
-
-    void init_plane() {
-        DATA_PLANE = {
-            vec2(-1.0f, 1.0f), vec2(0.0f, 0.0f),
-            vec2(1.0f, 1.0f), vec2(1.0f, 0.0f),
-            vec2(1.0f, -1.0f), vec2(1.0f, 1.0f),
-            vec2(-1.0f, -1.0f), vec2(0.0f, 1.0f)
-        };
-        DATA_PLANE_SIZE = DATA_PLANE.size() * sizeof(vec2);
-    }
-
-    void init_cylinder() {
-        for(size_t fi = 0; fi <= 360; fi += 60) {
-            float rad = fi * M_PI / 180.0f;
-            float x = RADIUS * cos(rad);
-            float y = RADIUS * sin(rad);
-            DATA_CYLINDER.push_back(vec3(x, y, -0.5));
-            DATA_CYLINDER.push_back(vec3(x, y, 0.5));
-        }
-        for(size_t fi = 0; fi <= 360; fi += 60) {
-            DATA_CYLINDER.push_back(vec3(fi / 360.0f, 1.0f, 0.0f));
-            DATA_CYLINDER.push_back(vec3(fi / 360.0f, 0.0f, 0.0f));
-        }
-        DATA_CYLINDER_SIZE = DATA_CYLINDER.size() * sizeof(vec3);
-        cout << "Cylinder points num: " << DATA_CYLINDER.size() << endl;
-    }
-
-    void set_data_buffer() {
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
-        glGenBuffers(1, &vx_buffer);
-        glBindBuffer(GL_ARRAY_BUFFER, vx_buffer);
-        glBufferData(GL_ARRAY_BUFFER, cur_data_size(), cur_data(), GL_STATIC_DRAW);
+    void set_draw_configs() {
+        glClearColor(0.0f, 0.0f, 0.4f, 0.0f);
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
     }
 
     void init_textures() {
         texture_data tex_data = utils::load_texture(TEXTURE_PATH);
-        GLuint textureID;
-        glGenTextures(1, &textureID);
-        glBindTexture(GL_TEXTURE_2D, textureID);
+        glGenTextures(1, &texture_id);
+        glBindTexture(GL_TEXTURE_2D, texture_id);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, tex_data.width, tex_data.height,
                      0, tex_data.format, GL_UNSIGNED_BYTE, tex_data.data_ptr);
 
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
+        sampler_id  = glGetUniformLocation(program, "texture_sampler");
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texture_id);
+        glUniform1i(sampler_id, 0);
     }
 
-    void set_draw_configs() {
-        glClearColor(0.2f, 0.2f, 0.2f, 1);
-        glClearDepth(1);
-        int mode = wireframe_mode ? GL_LINE : GL_FILL;
-        glPolygonMode(GL_FRONT_AND_BACK, mode);
+    void set_data_buffer() {
+        draw_data& data = cur_draw_data();
+        glGenBuffers(1, &vx_buffer);
+        glBindBuffer(GL_ARRAY_BUFFER, vx_buffer);
+        glBufferData(GL_ARRAY_BUFFER, data.vertices_data_size(),
+                     data.vertices_data(), GL_STATIC_DRAW);
+
+        glGenBuffers(1, &tex_buffer);
+        glBindBuffer(GL_ARRAY_BUFFER, tex_buffer);
+        glBufferData(GL_ARRAY_BUFFER, data.tex_mapping_data_size(),
+                     data.tex_mapping_data(), GL_STATIC_DRAW);
     }
 
-    void set_shaders() {
-        glDeleteProgram(program);
-        glDeleteShader(vx_shader);
-        glDeleteShader(frag_shader);
-
-        vx_shader = create_shader(GL_VERTEX_SHADER, cur_vertex_shader_path());
-        frag_shader = create_shader(GL_FRAGMENT_SHADER, cur_frag_shader_path());
-        program = create_program(vx_shader, frag_shader);
-
-        set_shader_attrs();
-    }
-
-    void set_shader_attrs() {
+    void draw() {
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glUseProgram(program);
-
-        switch (cur_figure) {
-        case PLANE: set_plane_shader_attrs(); break;
-        case CYLINDER: set_cylinder_shader_attrs(); break;
-        case SPHERE: set_sphere_shader_attrs(); break;
-        }
 
         GLuint location = glGetUniformLocation(program, "mvp");
         mat4 mvp = utils::calculate_mvp_matrix(rotation_by_control);
         glUniformMatrix4fv(location, 1, GL_FALSE, &mvp[0][0]);
-    }
 
-    void set_plane_shader_attrs() {
-        utils::set_vertex_attr_ptr(program, PLANE_VERTEX_POS);
-        utils::set_vertex_attr_ptr(program, PLANE_VERTEX_TEXCOORDS);
-    }
+        glBindBuffer(GL_ARRAY_BUFFER, vx_buffer);
+        utils::set_vertex_attr_ptr(program, VERTEX_POS);
 
-    void set_cylinder_shader_attrs() {
-        utils::set_vertex_attr_ptr(program, CYLINDER_VERTEX_POS);
-        utils::set_vertex_attr_ptr(program, CYLINDER_VERTEX_TEXCOORDS);
-    }
+        glBindBuffer(GL_ARRAY_BUFFER, tex_buffer);
+        utils::set_vertex_attr_ptr(program, VERTEX_TEXCOORDS);
 
-    void set_sphere_shader_attrs() {
-        cout << "set_sphere_shader_attrs not implemented !!! \n";
-    }
-
-    void draw() {
-        switch (cur_figure) {
-        case PLANE: glDrawArrays(GL_TRIANGLE_FAN, 0, DATA_PLANE.size() / 2); break;
-        case CYLINDER: draw_cylinder(); break;
-        case SPHERE: cout << "sphere draw func not set!!!!\n"; break;
-        }
-    }
-
-    void draw_cylinder() {
-        for(size_t i = 0; i < DATA_CYLINDER.size() / 2; i += 2) {
-            glDrawArrays(GL_QUAD_STRIP, i, (i + 4) % DATA_CYLINDER.size());
-        }
+        glDrawArrays(GL_TRIANGLES, 0, cur_draw_data().vertices_num());
+        glDisableVertexAttribArray(0);
+        glDisableVertexAttribArray(1);
     }
 };
 
@@ -272,8 +208,6 @@ void basic_init(int argc, char ** argv) {
 // отрисовка кадра
 void display_func() {
     prog_state.on_display_event();
-    TwDraw();
-    glutSwapBuffers();
 }
 
 // Переисовка кадра в отсутствии других сообщений
@@ -351,9 +285,13 @@ void remove_controls() {
 int main( int argc, char ** argv ) {
     try {
         basic_init(argc, argv);
+        utils::debug("libs are initialized");
         register_callbacks();
+        utils::debug("callbacks are registered");
         create_controls(prog_state);
+        utils::debug("controls are created");
         prog_state.init();
+        utils::debug("prog state is initiaized");
 
         glutMainLoop();
     } catch(std::exception const & except) {

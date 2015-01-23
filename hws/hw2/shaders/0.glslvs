@@ -1,6 +1,6 @@
 #version 130
 
-in vec2 vertex_pos;
+in vec3 vertex_pos;
 in vec2 vertex_texcoords;
 
 out vec2 frag_texcoords;
@@ -8,6 +8,6 @@ out vec2 frag_texcoords;
 uniform mat4 mvp;
 
 void main() {
-    gl_Position = mvp * vec4(vertex_pos, 0, 1);
+    gl_Position = mvp * vec4(vertex_pos, 1);
     frag_texcoords = vertex_texcoords;
 }
