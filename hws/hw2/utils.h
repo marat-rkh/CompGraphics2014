@@ -104,17 +104,6 @@ public:
         }
     }
 
-    //    static mat4 calculate_mvp_matrix(quat const& rotation) {
-    //        float const w = (float)glutGet(GLUT_WINDOW_WIDTH);
-    //        float const h = (float)glutGet(GLUT_WINDOW_HEIGHT);
-    //        // строим матрицу проекции с aspect ratio (отношением сторон) таким же, как у окна
-    //        mat4 const proj = perspective(45.0f, w / h, 0.1f, 100.0f);
-    //        // преобразование из СК мира в СК камеры
-    //        mat4 const view = lookAt(vec3(4, 4, 4), vec3(0, 0, 0), vec3(0, 1, 0));
-    //        mat4 const modelview = view * mat4_cast(rotation);
-    //        return proj * modelview;
-    //    }
-
     static vector<vec2> to_vec2_vector(vector<GLfloat>& in) {
         if(in.size() % 2 != 0) {
             throw msg_exception("to_vec2_vector() wrong input size");
@@ -202,20 +191,6 @@ public:
             bitangents.push_back(bitangent);
             bitangents.push_back(bitangent);
         }
-
-//        // See "Going Further"
-//        for (unsigned int i = 0; i < vertices.size(); i += 1 ) {
-//            glm::vec3 & n = normals[i];
-//            glm::vec3 & t = tangents[i];
-//            glm::vec3 & b = bitangents[i];
-//            // Gram-Schmidt orthogonalize
-//            t = glm::normalize(t - n * glm::dot(n, t));
-
-//            // Calculate handedness
-//            if (glm::dot(glm::cross(n, t), b) < 0.0f) {
-//                t = t * -1.0f;
-//            }
-//        }
     }
 
     static void set_vertex_attr_ptr(GLuint program, vertex_attr const& attr) {

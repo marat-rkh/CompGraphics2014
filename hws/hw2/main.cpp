@@ -10,8 +10,8 @@ struct draw_data {
     vector<GLfloat> vertices;
     vector<GLfloat> tex_mapping;
     vector<GLfloat> normals;
-//    vector<GLfloat> tangents;
-//    vector<GLfloat> bitangents;
+    vector<GLfloat> tangents;
+    vector<GLfloat> bitangents;
 
     size_t vertices_num() const { return vertices.size() / 3; }
 
@@ -24,11 +24,11 @@ struct draw_data {
     void* normals_data() { return normals.data(); }
     size_t normals_data_size() const { return normals.size() * sizeof(GLfloat); }
 
-//    void* tangents_data() { return tangents.data(); }
-//    size_t tangents_data_size() const { return tangents.size() * sizeof(GLfloat); }
+    void* tangents_data() { return tangents.data(); }
+    size_t tangents_data_size() const { return tangents.size() * sizeof(GLfloat); }
 
-//    void* bitangents_data() { return bitangents.data(); }
-//    size_t bitangents_data_size() const { return bitangents.size() * sizeof(GLfloat); }
+    void* bitangents_data() { return bitangents.data(); }
+    size_t bitangents_data_size() const { return bitangents.size() * sizeof(GLfloat); }
 };
 
 struct program_state {
@@ -44,11 +44,11 @@ struct program_state {
     // gl libs init functions
     void init() {
         utils::read_obj_file(QUAD_MODEL_PATH, quad.vertices, quad.tex_mapping, quad.normals);
-//        utils::computeTangentBasisAdapter(quad.vertices, quad.tex_mapping, quad.normals, quad.tangents, quad.bitangents);
+        utils::computeTangentBasisAdapter(quad.vertices, quad.tex_mapping, quad.normals, quad.tangents, quad.bitangents);
         utils::read_obj_file(CYLINDER_MODEL_PATH, cylinder.vertices, cylinder.tex_mapping, cylinder.normals);
-//        utils::computeTangentBasisAdapter(cylinder.vertices, cylinder.tex_mapping, cylinder.normals, cylinder.tangents, cylinder.bitangents);
+        utils::computeTangentBasisAdapter(cylinder.vertices, cylinder.tex_mapping, cylinder.normals, cylinder.tangents, cylinder.bitangents);
         utils::read_obj_file(SPHERE_MODEL_PATH, sphere.vertices, sphere.tex_mapping, sphere.normals);
-//        utils::computeTangentBasisAdapter(sphere.vertices, sphere.tex_mapping, sphere.normals, sphere.tangents, sphere.bitangents);
+        utils::computeTangentBasisAdapter(sphere.vertices, sphere.tex_mapping, sphere.normals, sphere.tangents, sphere.bitangents);
         set_shaders();
         set_draw_configs();
         init_textures();
@@ -83,6 +83,9 @@ struct program_state {
         case LINEAR: filter = MIPMAP; break;
         case MIPMAP: filter = NEAREST; break;
         }
+        glActiveTexture(GL_TEXTURE0);
+        set_texture_filtration();
+        glActiveTexture(GL_TEXTURE1);
         set_texture_filtration();
         on_display_event();
     }
@@ -107,8 +110,8 @@ private:
     GLuint vx_buffer;
     GLuint tex_buffer;
     GLuint norms_buffer;
-//    GLuint tans_buffer;
-//    GLuint bitans_buffer;
+    GLuint tans_buffer;
+    GLuint bitans_buffer;
 
     GLuint myTextureSampler;
     GLuint texture_id;
@@ -133,8 +136,8 @@ private:
     vertex_attr const IN_POS = { "in_pos", 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0 };
     vertex_attr const VERTEX_UV = { "vertexUV", 2, GL_FLOAT, GL_FALSE, 2 * sizeof(GLfloat), 0 };
     vertex_attr const IN_NORM = { "in_norm", 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0 };
-//    vertex_attr const TANGENTS = { "tangents", 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0 };
-//    vertex_attr const BI_TANGENTS = { "bi_tangents", 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0 };
+    vertex_attr const TANGENTS = { "tangents", 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0 };
+    vertex_attr const BI_TANGENTS = { "bi_tangents", 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0 };
 
     draw_data& cur_draw_data() {
         switch(cur_obj) {
@@ -215,10 +218,10 @@ private:
         glBufferData(GL_ARRAY_BUFFER, data.normals_data_size(),
                      data.normals_data(), GL_STATIC_DRAW);
 
-//        glGenBuffers(1, &tans_buffer);
-//        glBindBuffer(GL_ARRAY_BUFFER, tans_buffer);
-//        glBufferData(GL_ARRAY_BUFFER, data.tangents_data_size(),
-//                     data.tangents_data(), GL_STATIC_DRAW);
+        glGenBuffers(1, &tans_buffer);
+        glBindBuffer(GL_ARRAY_BUFFER, tans_buffer);
+        glBufferData(GL_ARRAY_BUFFER, data.tangents_data_size(),
+                     data.tangents_data(), GL_STATIC_DRAW);
 
 //        glGenBuffers(1, &bitans_buffer);
 //        glBindBuffer(GL_ARRAY_BUFFER, bitans_buffer);
@@ -237,7 +240,7 @@ private:
         mat4 const view = lookAt(vec3(4, 4, 4), vec3(0, 0, 0), vec3(0, 1, 0));
         mat4 const modelview = view * model;
         mat4 const mvp = proj * modelview;
-//        mat3 const modelview3 = mat3(modelview);
+        mat3 const modelview3 = mat3(modelview);
 
         GLuint location = glGetUniformLocation(program, "mvp");
         glUniformMatrix4fv(location, 1, GL_FALSE, &mvp[0][0]);
@@ -246,13 +249,13 @@ private:
         location = glGetUniformLocation(program, "view");
         glUniformMatrix4fv(location, 1, GL_FALSE, &view[0][0]);
 //        location = glGetUniformLocation(program, "modelView3");
-//        glUniformMatrix4fv(location, 1, GL_FALSE, &modelview3[0][0]);
+//        glUniformMatrix3fv(location, 1, GL_FALSE, &modelview3[0][0]);
 
-        vec3 const lightPos = vec3(5, 5, 0);
-        glUniform3f(glGetUniformLocation(program, "LightPosition_worldspace"), lightPos[0], lightPos[1], lightPos[2]);
+        vec3 const lightPos = vec3(15, 15, 0);
+        glUniform3f(glGetUniformLocation(program, "lightPos"), lightPos[0], lightPos[1], lightPos[2]);
 //        vec3 const lightColor = vec3(1.0f, 1.0f, 1.0f);
 //        glUniform3f(glGetUniformLocation(program, "lightColor"), lightColor[0], lightColor[1], lightColor[2]);
-//        vec3 const ambient = vec3(0.1f, 0.1f, 0.1f);
+//        vec3 const ambient = vec3(0.9f, 0.9f, 0.9f);
 //        glUniform3f(glGetUniformLocation(program, "ambient"), ambient[0], ambient[1], ambient[2]);
 //        vec3 const specular = vec3(1.0f, 1.0f, 1.0f);
 //        glUniform3f(glGetUniformLocation(program, "specularr"), specular[0], specular[1], specular[2]);
@@ -267,8 +270,8 @@ private:
         utils::set_vertex_attr_ptr(program, VERTEX_UV);
         glBindBuffer(GL_ARRAY_BUFFER, norms_buffer);
         utils::set_vertex_attr_ptr(program, IN_NORM);
-//        glBindBuffer(GL_ARRAY_BUFFER, tans_buffer);
-//        utils::set_vertex_attr_ptr(program, TANGENTS);
+        glBindBuffer(GL_ARRAY_BUFFER, tans_buffer);
+        utils::set_vertex_attr_ptr(program, TANGENTS);
 //        glBindBuffer(GL_ARRAY_BUFFER, bitans_buffer);
 //        utils::set_vertex_attr_ptr(program, BI_TANGENTS);
 
