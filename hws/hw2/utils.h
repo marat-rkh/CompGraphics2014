@@ -71,12 +71,15 @@ public:
         }
 
         tex_data.format = pixel_size == 24 ? GL_BGR : pixel_size == 8 ? GL_LUMINANCE : 0;
-//        int iInternalFormat = iBPP == 24 ? GL_RGB : GL_DEPTH_COMPONENT;
+        //        int iInternalFormat = iBPP == 24 ? GL_RGB : GL_DEPTH_COMPONENT;
         return tex_data;
     }
 
-    static void read_obj_file(char const* obj_file_path, vector<GLfloat>& vertices,
-                              vector<GLfloat>& tex_mapping) {
+    static void read_obj_file(char const* obj_file_path,
+                              vector<GLfloat>& vertices,
+                              vector<GLfloat>& tex_mapping,
+                              vector<GLfloat>& normals)
+    {
         vector<tinyobj::shape_t> shapes;
         vector<tinyobj::material_t> materials;
         string err = tinyobj::LoadObj(shapes, materials, obj_file_path);
@@ -94,18 +97,125 @@ public:
 
             tex_mapping.push_back(shapes[0].mesh.texcoords[2 * ind + 0]);
             tex_mapping.push_back(shapes[0].mesh.texcoords[2 * ind + 1]);
+
+            normals.push_back(shapes[0].mesh.normals[3 * ind + 0]);
+            normals.push_back(shapes[0].mesh.normals[3 * ind + 1]);
+            normals.push_back(shapes[0].mesh.normals[3 * ind + 2]);
         }
     }
 
-    static mat4 calculate_mvp_matrix(quat const& rotation) {
-        float const w = (float)glutGet(GLUT_WINDOW_WIDTH);
-        float const h = (float)glutGet(GLUT_WINDOW_HEIGHT);
-        // строим матрицу проекции с aspect ratio (отношением сторон) таким же, как у окна
-        mat4 const proj = perspective(45.0f, w / h, 0.1f, 100.0f);
-        // преобразование из СК мира в СК камеры
-        mat4 const view = lookAt(vec3(4, 4, 4), vec3(0, 0, 0), vec3(0, 1, 0));
-        mat4 const modelview = view * mat4_cast(rotation);
-        return proj * modelview;
+    //    static mat4 calculate_mvp_matrix(quat const& rotation) {
+    //        float const w = (float)glutGet(GLUT_WINDOW_WIDTH);
+    //        float const h = (float)glutGet(GLUT_WINDOW_HEIGHT);
+    //        // строим матрицу проекции с aspect ratio (отношением сторон) таким же, как у окна
+    //        mat4 const proj = perspective(45.0f, w / h, 0.1f, 100.0f);
+    //        // преобразование из СК мира в СК камеры
+    //        mat4 const view = lookAt(vec3(4, 4, 4), vec3(0, 0, 0), vec3(0, 1, 0));
+    //        mat4 const modelview = view * mat4_cast(rotation);
+    //        return proj * modelview;
+    //    }
+
+    static vector<vec2> to_vec2_vector(vector<GLfloat>& in) {
+        if(in.size() % 2 != 0) {
+            throw msg_exception("to_vec2_vector() wrong input size");
+        }
+        vector<vec2> out;
+        for(size_t i = 0; i != in.size(); ++i) {
+            out.push_back(vec2(in[2 * i + 0], in[2 * i + 1]));
+        }
+        return out;
+    }
+
+    static vector<vec3> to_vec3_vector(vector<GLfloat>& in) {
+        if(in.size() % 3 != 0) {
+            throw msg_exception("to_vec3_vector() wrong input size: " + std::to_string(in.size()));
+        }
+        vector<vec3> out;
+        for(size_t i = 0; i != in.size(); ++i) {
+            out.push_back(vec3(in[3 * i + 0], in[3 * i + 1], in[3 * i + 2]));
+        }
+        return out;
+    }
+
+    static void to_floats_vector(vector<vec3>& in, vector<GLfloat>& out) {
+        for(size_t i = 0; i != in.size(); ++i) {
+            out.push_back(in[i][0]);
+            out.push_back(in[i][1]);
+            out.push_back(in[i][2]);
+        }
+    }
+
+    static void computeTangentBasisAdapter(
+            std::vector<GLfloat> & vertices,
+            std::vector<GLfloat> & uvs,
+            std::vector<GLfloat> & normals,
+            // outputs
+            std::vector<GLfloat> & tangents,
+            std::vector<GLfloat> & bitangents)
+    {
+        vector<vec3> verts = to_vec3_vector(vertices);
+        vector<vec2> uvs_ = to_vec2_vector(uvs);
+        vector<vec3> norms = to_vec3_vector(normals);
+        vector<vec3> tans;
+        vector<vec3> bitans;
+        debug("computation started");
+        computeTangentBasis(verts, uvs_, norms, tans, bitans);
+        debug("computation finished");
+        to_floats_vector(tans, tangents);
+        to_floats_vector(bitans, bitangents);
+    }
+
+    static void computeTangentBasis(
+            // inputs
+            std::vector<glm::vec3> & vertices,
+            std::vector<glm::vec2> & uvs,
+            std::vector<glm::vec3> & normals,
+            // outputs
+            std::vector<glm::vec3> & tangents,
+            std::vector<glm::vec3> & bitangents)
+    {
+        for (unsigned int i = 0; i < vertices.size(); i += 3 ) {
+            // Shortcuts for vertices
+            glm::vec3 & v0 = vertices[i + 0];
+            glm::vec3 & v1 = vertices[i + 1];
+            glm::vec3 & v2 = vertices[i + 2];
+            // Shortcuts for UVs
+            glm::vec2 & uv0 = uvs[i + 0];
+            glm::vec2 & uv1 = uvs[i + 1];
+            glm::vec2 & uv2 = uvs[i + 2];
+            // Edges of the triangle : postion delta
+            glm::vec3 deltaPos1 = v1 - v0;
+            glm::vec3 deltaPos2 = v2 - v0;
+            // UV delta
+            glm::vec2 deltaUV1 = uv1 - uv0;
+            glm::vec2 deltaUV2 = uv2 - uv0;
+            float r = 1.0f / (deltaUV1.x * deltaUV2.y - deltaUV1.y * deltaUV2.x);
+            glm::vec3 tangent = (deltaPos1 * deltaUV2.y   - deltaPos2 * deltaUV1.y) * r;
+            glm::vec3 bitangent = (deltaPos2 * deltaUV1.x   - deltaPos1 * deltaUV2.x) * r;
+            // Set the same tangent for all three vertices of the triangle.
+            // They will be merged later, in vboindexer.cpp
+            tangents.push_back(tangent);
+            tangents.push_back(tangent);
+            tangents.push_back(tangent);
+            // Same thing for binormals
+            bitangents.push_back(bitangent);
+            bitangents.push_back(bitangent);
+            bitangents.push_back(bitangent);
+        }
+
+//        // See "Going Further"
+//        for (unsigned int i = 0; i < vertices.size(); i += 1 ) {
+//            glm::vec3 & n = normals[i];
+//            glm::vec3 & t = tangents[i];
+//            glm::vec3 & b = bitangents[i];
+//            // Gram-Schmidt orthogonalize
+//            t = glm::normalize(t - n * glm::dot(n, t));
+
+//            // Calculate handedness
+//            if (glm::dot(glm::cross(n, t), b) < 0.0f) {
+//                t = t * -1.0f;
+//            }
+//        }
     }
 
     static void set_vertex_attr_ptr(GLuint program, vertex_attr const& attr) {

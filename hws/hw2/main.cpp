@@ -9,6 +9,9 @@ enum filtering_mode { NEAREST, LINEAR, MIPMAP };
 struct draw_data {
     vector<GLfloat> vertices;
     vector<GLfloat> tex_mapping;
+    vector<GLfloat> normals;
+//    vector<GLfloat> tangents;
+//    vector<GLfloat> bitangents;
 
     size_t vertices_num() const { return vertices.size() / 3; }
 
@@ -17,6 +20,15 @@ struct draw_data {
 
     void* tex_mapping_data() { return tex_mapping.data(); }
     size_t tex_mapping_data_size() const { return tex_mapping.size() * sizeof(GLfloat); }
+
+    void* normals_data() { return normals.data(); }
+    size_t normals_data_size() const { return normals.size() * sizeof(GLfloat); }
+
+//    void* tangents_data() { return tangents.data(); }
+//    size_t tangents_data_size() const { return tangents.size() * sizeof(GLfloat); }
+
+//    void* bitangents_data() { return bitangents.data(); }
+//    size_t bitangents_data_size() const { return bitangents.size() * sizeof(GLfloat); }
 };
 
 struct program_state {
@@ -31,9 +43,12 @@ struct program_state {
     // this function must be called before main loop but after
     // gl libs init functions
     void init() {
-        utils::read_obj_file(QUAD_MODEL_PATH, quad.vertices, quad.tex_mapping);
-        utils::read_obj_file(CYLINDER_MODEL_PATH, cylinder.vertices, cylinder.tex_mapping);
-        utils::read_obj_file(SPHERE_MODEL_PATH, sphere.vertices, sphere.tex_mapping);
+        utils::read_obj_file(QUAD_MODEL_PATH, quad.vertices, quad.tex_mapping, quad.normals);
+//        utils::computeTangentBasisAdapter(quad.vertices, quad.tex_mapping, quad.normals, quad.tangents, quad.bitangents);
+        utils::read_obj_file(CYLINDER_MODEL_PATH, cylinder.vertices, cylinder.tex_mapping, cylinder.normals);
+//        utils::computeTangentBasisAdapter(cylinder.vertices, cylinder.tex_mapping, cylinder.normals, cylinder.tangents, cylinder.bitangents);
+        utils::read_obj_file(SPHERE_MODEL_PATH, sphere.vertices, sphere.tex_mapping, sphere.normals);
+//        utils::computeTangentBasisAdapter(sphere.vertices, sphere.tex_mapping, sphere.normals, sphere.tangents, sphere.bitangents);
         set_shaders();
         set_draw_configs();
         init_textures();
@@ -91,9 +106,14 @@ private:
 
     GLuint vx_buffer;
     GLuint tex_buffer;
+    GLuint norms_buffer;
+//    GLuint tans_buffer;
+//    GLuint bitans_buffer;
 
-    GLuint sampler_id;
+    GLuint myTextureSampler;
     GLuint texture_id;
+    GLuint myTextureSamplerNormal;
+    GLuint texture_normal_id;
 
     const char* QUAD_MODEL_PATH = "..//resources//quad.obj";
     draw_data quad;
@@ -105,13 +125,16 @@ private:
     draw_data sphere;
 
     const char* TEXTURE_PATH = "..//resources//wall.png";
+    const char* TEXTURE_NORMALS_PATH = "..//resources//wall_normals.jpg";
 
     const char* VERTEX_SHADER_PATH = "..//shaders//0.glslvs";
     const char* FRAGMENT_SHADER_PATH = "..//shaders//0.glslfs";
 
-    vertex_attr const VERTEX_POS = { "vertex_pos", 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0 };
-    vertex_attr const VERTEX_TEXCOORDS = { "vertex_texcoords", 2, GL_FLOAT,
-                                           GL_FALSE, 2 * sizeof(GLfloat), 0 };
+    vertex_attr const IN_POS = { "in_pos", 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0 };
+    vertex_attr const VERTEX_UV = { "vertexUV", 2, GL_FLOAT, GL_FALSE, 2 * sizeof(GLfloat), 0 };
+    vertex_attr const IN_NORM = { "in_norm", 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0 };
+//    vertex_attr const TANGENTS = { "tangents", 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0 };
+//    vertex_attr const BI_TANGENTS = { "bi_tangents", 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0 };
 
     draw_data& cur_draw_data() {
         switch(cur_obj) {
@@ -143,12 +166,18 @@ private:
         glBindTexture(GL_TEXTURE_2D, texture_id);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, tex_data.width, tex_data.height,
                      0, tex_data.format, GL_UNSIGNED_BYTE, tex_data.data_ptr);
+        set_texture_filtration();
+        myTextureSampler  = glGetUniformLocation(program, "myTextureSampler");
+        glUniform1i(myTextureSampler, 0);
 
-        sampler_id  = glGetUniformLocation(program, "texture_sampler");
-
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, texture_id);
-        glUniform1i(sampler_id, 0);
+        texture_data tex_norms_data = utils::load_texture(TEXTURE_NORMALS_PATH);
+        glGenTextures(1, &texture_normal_id);
+        glBindTexture(GL_TEXTURE_2D, texture_normal_id);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, tex_norms_data.width, tex_norms_data.height,
+                     0, tex_norms_data.format, GL_UNSIGNED_BYTE, tex_norms_data.data_ptr);
+        set_texture_filtration();
+        myTextureSamplerNormal  = glGetUniformLocation(program, "myTextureSamplerNormal");
+        glUniform1i(myTextureSamplerNormal, 1);
     }
 
     void set_texture_filtration() {
@@ -180,21 +209,74 @@ private:
         glBindBuffer(GL_ARRAY_BUFFER, tex_buffer);
         glBufferData(GL_ARRAY_BUFFER, data.tex_mapping_data_size(),
                      data.tex_mapping_data(), GL_STATIC_DRAW);
+
+        glGenBuffers(1, &norms_buffer);
+        glBindBuffer(GL_ARRAY_BUFFER, norms_buffer);
+        glBufferData(GL_ARRAY_BUFFER, data.normals_data_size(),
+                     data.normals_data(), GL_STATIC_DRAW);
+
+//        glGenBuffers(1, &tans_buffer);
+//        glBindBuffer(GL_ARRAY_BUFFER, tans_buffer);
+//        glBufferData(GL_ARRAY_BUFFER, data.tangents_data_size(),
+//                     data.tangents_data(), GL_STATIC_DRAW);
+
+//        glGenBuffers(1, &bitans_buffer);
+//        glBindBuffer(GL_ARRAY_BUFFER, bitans_buffer);
+//        glBufferData(GL_ARRAY_BUFFER, data.bitangents_data_size(),
+//                     data.bitangents_data(), GL_STATIC_DRAW);
     }
 
     void draw() {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glUseProgram(program);
 
+        float const w = (float)glutGet(GLUT_WINDOW_WIDTH);
+        float const h = (float)glutGet(GLUT_WINDOW_HEIGHT);
+        mat4 const proj = perspective(45.0f, w / h, 0.1f, 100.0f);
+        mat4 const model = mat4_cast(rotation_by_control);
+        mat4 const view = lookAt(vec3(4, 4, 4), vec3(0, 0, 0), vec3(0, 1, 0));
+        mat4 const modelview = view * model;
+        mat4 const mvp = proj * modelview;
+//        mat3 const modelview3 = mat3(modelview);
+
         GLuint location = glGetUniformLocation(program, "mvp");
-        mat4 mvp = utils::calculate_mvp_matrix(rotation_by_control);
         glUniformMatrix4fv(location, 1, GL_FALSE, &mvp[0][0]);
+        location = glGetUniformLocation(program, "model");
+        glUniformMatrix4fv(location, 1, GL_FALSE, &model[0][0]);
+        location = glGetUniformLocation(program, "view");
+        glUniformMatrix4fv(location, 1, GL_FALSE, &view[0][0]);
+//        location = glGetUniformLocation(program, "modelView3");
+//        glUniformMatrix4fv(location, 1, GL_FALSE, &modelview3[0][0]);
+
+        vec3 const lightPos = vec3(5, 5, 0);
+        glUniform3f(glGetUniformLocation(program, "LightPosition_worldspace"), lightPos[0], lightPos[1], lightPos[2]);
+//        vec3 const lightColor = vec3(1.0f, 1.0f, 1.0f);
+//        glUniform3f(glGetUniformLocation(program, "lightColor"), lightColor[0], lightColor[1], lightColor[2]);
+//        vec3 const ambient = vec3(0.1f, 0.1f, 0.1f);
+//        glUniform3f(glGetUniformLocation(program, "ambient"), ambient[0], ambient[1], ambient[2]);
+//        vec3 const specular = vec3(1.0f, 1.0f, 1.0f);
+//        glUniform3f(glGetUniformLocation(program, "specularr"), specular[0], specular[1], specular[2]);
+//        GLfloat const power = 1.0f;
+//        glUniform1f(glGetUniformLocation(program, "power"), power);
+//        GLfloat const specular_power = 5.0f;
+//        glUniform1f(glGetUniformLocation(program, "specularPower"), specular_power);
 
         glBindBuffer(GL_ARRAY_BUFFER, vx_buffer);
-        utils::set_vertex_attr_ptr(program, VERTEX_POS);
-
+        utils::set_vertex_attr_ptr(program, IN_POS);
         glBindBuffer(GL_ARRAY_BUFFER, tex_buffer);
-        utils::set_vertex_attr_ptr(program, VERTEX_TEXCOORDS);
+        utils::set_vertex_attr_ptr(program, VERTEX_UV);
+        glBindBuffer(GL_ARRAY_BUFFER, norms_buffer);
+        utils::set_vertex_attr_ptr(program, IN_NORM);
+//        glBindBuffer(GL_ARRAY_BUFFER, tans_buffer);
+//        utils::set_vertex_attr_ptr(program, TANGENTS);
+//        glBindBuffer(GL_ARRAY_BUFFER, bitans_buffer);
+//        utils::set_vertex_attr_ptr(program, BI_TANGENTS);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texture_id);
+
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, texture_normal_id);
 
         glDrawArrays(GL_TRIANGLES, 0, cur_draw_data().vertices_num());
         glDisableVertexAttribArray(0);
