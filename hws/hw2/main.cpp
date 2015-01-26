@@ -10,8 +10,6 @@ struct draw_data {
     vector<GLfloat> vertices;
     vector<GLfloat> tex_mapping;
     vector<GLfloat> normals;
-    vector<GLfloat> tangents;
-    vector<GLfloat> bitangents;
 
     size_t vertices_num() const { return vertices.size() / 3; }
 
@@ -23,32 +21,34 @@ struct draw_data {
 
     void* normals_data() { return normals.data(); }
     size_t normals_data_size() const { return normals.size() * sizeof(GLfloat); }
-
-    void* tangents_data() { return tangents.data(); }
-    size_t tangents_data_size() const { return tangents.size() * sizeof(GLfloat); }
-
-    void* bitangents_data() { return bitangents.data(); }
-    size_t bitangents_data_size() const { return bitangents.size() * sizeof(GLfloat); }
 };
 
 struct program_state {
     quat rotation_by_control;
+    float tex_coords_scale;
+    vec3 light_color;
+    float light_power;
+    quat light_src_rotation;
+    float ambient;
+    float specular;
 
     program_state()
         : wireframe_mode(false)
         , cur_obj(QUAD)
         , filter(NEAREST)
+        , tex_coords_scale(1)
+        , light_color(1, 1, 1)
+        , light_power(500)
+        , ambient(0.1)
+        , specular(0.5)
     {}
 
     // this function must be called before main loop but after
     // gl libs init functions
     void init() {
         utils::read_obj_file(QUAD_MODEL_PATH, quad.vertices, quad.tex_mapping, quad.normals);
-        utils::computeTangentBasisAdapter(quad.vertices, quad.tex_mapping, quad.normals, quad.tangents, quad.bitangents);
         utils::read_obj_file(CYLINDER_MODEL_PATH, cylinder.vertices, cylinder.tex_mapping, cylinder.normals);
-        utils::computeTangentBasisAdapter(cylinder.vertices, cylinder.tex_mapping, cylinder.normals, cylinder.tangents, cylinder.bitangents);
         utils::read_obj_file(SPHERE_MODEL_PATH, sphere.vertices, sphere.tex_mapping, sphere.normals);
-        utils::computeTangentBasisAdapter(sphere.vertices, sphere.tex_mapping, sphere.normals, sphere.tangents, sphere.bitangents);
         set_shaders();
         set_draw_configs();
         init_textures();
@@ -85,8 +85,6 @@ struct program_state {
         }
         glActiveTexture(GL_TEXTURE0);
         set_texture_filtration();
-        glActiveTexture(GL_TEXTURE1);
-        set_texture_filtration();
         on_display_event();
     }
 
@@ -110,13 +108,9 @@ private:
     GLuint vx_buffer;
     GLuint tex_buffer;
     GLuint norms_buffer;
-    GLuint tans_buffer;
-    GLuint bitans_buffer;
 
-    GLuint myTextureSampler;
+    GLuint texture_sampler;
     GLuint texture_id;
-    GLuint myTextureSamplerNormal;
-    GLuint texture_normal_id;
 
     const char* QUAD_MODEL_PATH = "..//resources//quad.obj";
     draw_data quad;
@@ -128,16 +122,13 @@ private:
     draw_data sphere;
 
     const char* TEXTURE_PATH = "..//resources//wall.png";
-    const char* TEXTURE_NORMALS_PATH = "..//resources//wall_normals.jpg";
 
     const char* VERTEX_SHADER_PATH = "..//shaders//0.glslvs";
     const char* FRAGMENT_SHADER_PATH = "..//shaders//0.glslfs";
 
-    vertex_attr const IN_POS = { "in_pos", 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0 };
-    vertex_attr const VERTEX_UV = { "vertexUV", 2, GL_FLOAT, GL_FALSE, 2 * sizeof(GLfloat), 0 };
-    vertex_attr const IN_NORM = { "in_norm", 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0 };
-    vertex_attr const TANGENTS = { "tangents", 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0 };
-    vertex_attr const BI_TANGENTS = { "bi_tangents", 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0 };
+    vertex_attr const IN_POS = { "vert_pos_modelspace", 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0 };
+    vertex_attr const VERTEX_UV = { "vert_uv", 2, GL_FLOAT, GL_FALSE, 2 * sizeof(GLfloat), 0 };
+    vertex_attr const IN_NORM = { "vert_normal_modelspace", 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0 };
 
     draw_data& cur_draw_data() {
         switch(cur_obj) {
@@ -170,17 +161,8 @@ private:
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, tex_data.width, tex_data.height,
                      0, tex_data.format, GL_UNSIGNED_BYTE, tex_data.data_ptr);
         set_texture_filtration();
-        myTextureSampler  = glGetUniformLocation(program, "myTextureSampler");
-        glUniform1i(myTextureSampler, 0);
-
-        texture_data tex_norms_data = utils::load_texture(TEXTURE_NORMALS_PATH);
-        glGenTextures(1, &texture_normal_id);
-        glBindTexture(GL_TEXTURE_2D, texture_normal_id);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, tex_norms_data.width, tex_norms_data.height,
-                     0, tex_norms_data.format, GL_UNSIGNED_BYTE, tex_norms_data.data_ptr);
-        set_texture_filtration();
-        myTextureSamplerNormal  = glGetUniformLocation(program, "myTextureSamplerNormal");
-        glUniform1i(myTextureSamplerNormal, 1);
+        texture_sampler  = glGetUniformLocation(program, "texture_sampler");
+        glUniform1i(texture_sampler, 0);
     }
 
     void set_texture_filtration() {
@@ -217,16 +199,6 @@ private:
         glBindBuffer(GL_ARRAY_BUFFER, norms_buffer);
         glBufferData(GL_ARRAY_BUFFER, data.normals_data_size(),
                      data.normals_data(), GL_STATIC_DRAW);
-
-        glGenBuffers(1, &tans_buffer);
-        glBindBuffer(GL_ARRAY_BUFFER, tans_buffer);
-        glBufferData(GL_ARRAY_BUFFER, data.tangents_data_size(),
-                     data.tangents_data(), GL_STATIC_DRAW);
-
-//        glGenBuffers(1, &bitans_buffer);
-//        glBindBuffer(GL_ARRAY_BUFFER, bitans_buffer);
-//        glBufferData(GL_ARRAY_BUFFER, data.bitangents_data_size(),
-//                     data.bitangents_data(), GL_STATIC_DRAW);
     }
 
     void draw() {
@@ -237,10 +209,9 @@ private:
         float const h = (float)glutGet(GLUT_WINDOW_HEIGHT);
         mat4 const proj = perspective(45.0f, w / h, 0.1f, 100.0f);
         mat4 const model = mat4_cast(rotation_by_control);
-        mat4 const view = lookAt(vec3(4, 4, 4), vec3(0, 0, 0), vec3(0, 1, 0));
+        mat4 const view = lookAt(vec3(-2, 3, 6), vec3(0, 0, 0), vec3(0, 1, 0));
         mat4 const modelview = view * model;
         mat4 const mvp = proj * modelview;
-        mat3 const modelview3 = mat3(modelview);
 
         GLuint location = glGetUniformLocation(program, "mvp");
         glUniformMatrix4fv(location, 1, GL_FALSE, &mvp[0][0]);
@@ -248,21 +219,14 @@ private:
         glUniformMatrix4fv(location, 1, GL_FALSE, &model[0][0]);
         location = glGetUniformLocation(program, "view");
         glUniformMatrix4fv(location, 1, GL_FALSE, &view[0][0]);
-//        location = glGetUniformLocation(program, "modelView3");
-//        glUniformMatrix3fv(location, 1, GL_FALSE, &modelview3[0][0]);
 
-        vec3 const lightPos = vec3(15, 15, 0);
-        glUniform3f(glGetUniformLocation(program, "lightPos"), lightPos[0], lightPos[1], lightPos[2]);
-//        vec3 const lightColor = vec3(1.0f, 1.0f, 1.0f);
-//        glUniform3f(glGetUniformLocation(program, "lightColor"), lightColor[0], lightColor[1], lightColor[2]);
-//        vec3 const ambient = vec3(0.9f, 0.9f, 0.9f);
-//        glUniform3f(glGetUniformLocation(program, "ambient"), ambient[0], ambient[1], ambient[2]);
-//        vec3 const specular = vec3(1.0f, 1.0f, 1.0f);
-//        glUniform3f(glGetUniformLocation(program, "specularr"), specular[0], specular[1], specular[2]);
-//        GLfloat const power = 1.0f;
-//        glUniform1f(glGetUniformLocation(program, "power"), power);
-//        GLfloat const specular_power = 5.0f;
-//        glUniform1f(glGetUniformLocation(program, "specularPower"), specular_power);
+        vec3 const lightPos = vec3(mat4_cast(light_src_rotation) * vec4(13, 13, 8, 1));
+        glUniform3f(glGetUniformLocation(program, "lightpos_worldspace"), lightPos[0], lightPos[1], lightPos[2]);
+        glUniform1f(glGetUniformLocation(program, "tex_coords_scale"), tex_coords_scale);
+        glUniform3f(glGetUniformLocation(program, "light_color"), light_color[0], light_color[1], light_color[2]);
+        glUniform1f(glGetUniformLocation(program, "light_power"), light_power);
+        glUniform3f(glGetUniformLocation(program, "ambient"), ambient, ambient, ambient);
+        glUniform3f(glGetUniformLocation(program, "specular"), specular, specular, specular);
 
         glBindBuffer(GL_ARRAY_BUFFER, vx_buffer);
         utils::set_vertex_attr_ptr(program, IN_POS);
@@ -270,20 +234,14 @@ private:
         utils::set_vertex_attr_ptr(program, VERTEX_UV);
         glBindBuffer(GL_ARRAY_BUFFER, norms_buffer);
         utils::set_vertex_attr_ptr(program, IN_NORM);
-        glBindBuffer(GL_ARRAY_BUFFER, tans_buffer);
-        utils::set_vertex_attr_ptr(program, TANGENTS);
-//        glBindBuffer(GL_ARRAY_BUFFER, bitans_buffer);
-//        utils::set_vertex_attr_ptr(program, BI_TANGENTS);
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, texture_id);
 
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, texture_normal_id);
-
         glDrawArrays(GL_TRIANGLES, 0, cur_draw_data().vertices_num());
         glDisableVertexAttribArray(0);
         glDisableVertexAttribArray(1);
+
     }
 };
 
@@ -387,7 +345,7 @@ void create_controls(program_state& prog_state) {
     TwInit(TW_OPENGL, NULL);
 
     TwBar *bar = TwNewBar("Parameters");
-    TwDefine("Parameters size='500 180' color='70 100 120' valueswidth=220 iconpos=topleft");
+    TwDefine("Parameters size='500 370' color='70 100 120' valueswidth=220 iconpos=topleft");
     TwAddButton(bar, "Fullscreen toggle", toggle_fullscreen_callback, NULL,
                 "label='Toggle fullscreen mode' key=f");
     TwAddVarRW(bar, "ObjRotation", TW_TYPE_QUAT4F, &prog_state.rotation_by_control,
@@ -398,6 +356,22 @@ void create_controls(program_state& prog_state) {
                 "label='Switch wireframe mode' key=w");
     TwAddButton(bar, "Next filtration mode", next_filtration_callback, &prog_state,
                 "label='Next filtration mode' key=t");
+    TwAddVarRW(bar, "Tex coords scale", TW_TYPE_FLOAT, &prog_state.tex_coords_scale,
+               "min=0.1 max=2 step=0.1");
+    TwAddVarRW(bar, "Light color R", TW_TYPE_FLOAT, &prog_state.light_color[0],
+               "min=0 max=1 step=0.1");
+    TwAddVarRW(bar, "Light color G", TW_TYPE_FLOAT, &prog_state.light_color[1],
+               "min=0 max=1 step=0.1");
+    TwAddVarRW(bar, "Light color B", TW_TYPE_FLOAT, &prog_state.light_color[2],
+               "min=0 max=1 step=0.1");
+    TwAddVarRW(bar, "Light power", TW_TYPE_FLOAT, &prog_state.light_power,
+               "min=0 max=500 step=10");
+    TwAddVarRW(bar, "Light src rotation", TW_TYPE_QUAT4F, &prog_state.light_src_rotation,
+               "opened=true");
+    TwAddVarRW(bar, "Ambient", TW_TYPE_FLOAT, &prog_state.ambient,
+               "min=0 max=1 step=0.1");
+    TwAddVarRW(bar, "Specular", TW_TYPE_FLOAT, &prog_state.specular,
+               "min=0 max=1 step=0.1");
 }
 
 void remove_controls() {
