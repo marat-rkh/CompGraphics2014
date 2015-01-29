@@ -62,11 +62,20 @@ struct program_state {
     }
 
     void on_display_event() {
-        float const half_w = cur_window_width() / 2;
+        float const half_w = cur_window_width() / 2 - 5;
+        float const right_x = cur_window_width() / 2 + 5;
+
+        glEnable(GL_SCISSOR_TEST);
+
+        glScissor(0, 0, cur_window_width(), cur_window_height());
+        glClearColor(0.0f, 1.0f, 0.0f, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         bind_offscreen_buffer();
 
         glBindTexture(GL_TEXTURE_2D, texture_id);
+        glScissor(0, 0, cur_window_width(), cur_window_height());
+        glClearColor(0.0f, 0.0f, 0.4f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         render_scene();
         glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
@@ -74,20 +83,25 @@ struct program_state {
         unbind_offscreen_buffer();
 
         glViewport(0, 0, half_w, cur_window_height());
+        glScissor(0, 0, half_w, cur_window_height());
+        glClearColor(0.0f, 0.0f, 0.4f, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glBindTexture(GL_TEXTURE_2D, texture_id);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         render_scene();
         glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
 
-        glViewport(half_w, 0, half_w, cur_window_height());
+        glViewport(right_x, 0, half_w, cur_window_height());
+        glScissor(right_x, 0, half_w, cur_window_height());
+        glClearColor(0.0f, 0.0f, 0.4f, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         geom_obj prev_obj = cur_obj;
         cur_obj = QUAD;
         set_data_buffer();
 
         glBindTexture(GL_TEXTURE_2D, fbo_texture); // Bind our frame buffer texture
-        render_scene();
+        render_filtered();
         glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
 
         cur_obj = prev_obj;
@@ -350,6 +364,30 @@ private:
     void unbind_offscreen_buffer() {
         glPopAttrib(); // Restore our glEnable and glViewport states
         glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0); // Unbind our texture
+    }
+
+    void render_filtered() {
+        glUseProgram(filtered_program);
+
+        float const w = (float)glutGet(GLUT_WINDOW_WIDTH);
+        float const h = (float)glutGet(GLUT_WINDOW_HEIGHT);
+        mat4 const proj = perspective(45.0f, w / h, 0.1f, 100.0f);
+        mat4 const model = mat4_cast(rotation_by_control);
+        mat4 const view = lookAt(vec3(-2, 3, 6), vec3(0, 0, 0), vec3(0, 1, 0));
+        mat4 const modelview = view * model;
+        mat4 const mvp = proj * modelview;
+
+        GLuint location = glGetUniformLocation(scene_program, "mvp");
+        glUniformMatrix4fv(location, 1, GL_FALSE, &mvp[0][0]);
+
+        glBindBuffer(GL_ARRAY_BUFFER, vx_buffer);
+        utils::set_vertex_attr_ptr(scene_program, IN_POS);
+        glBindBuffer(GL_ARRAY_BUFFER, tex_buffer);
+        utils::set_vertex_attr_ptr(scene_program, VERTEX_UV);
+
+        glDrawArrays(GL_TRIANGLES, 0, cur_draw_data().vertices_num());
+        glDisableVertexAttribArray(0);
+        glDisableVertexAttribArray(1);
     }
 
 //    void render_offscreen(void) {
