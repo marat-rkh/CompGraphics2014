@@ -132,8 +132,9 @@ struct program_state {
         case LINEAR: filter = MIPMAP; break;
         case MIPMAP: filter = NEAREST; break;
         }
-        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texture_id);
         set_texture_filtration();
+        glBindTexture(GL_TEXTURE_2D, 0);
         on_display_event();
     }
 
@@ -227,11 +228,13 @@ private:
         texture_data tex_data = utils::load_texture(TEXTURE_PATH);
         glGenTextures(1, &texture_id);
         glBindTexture(GL_TEXTURE_2D, texture_id);
+
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, tex_data.width, tex_data.height,
                      0, tex_data.format, GL_UNSIGNED_BYTE, tex_data.data_ptr);
         set_texture_filtration();
         texture_sampler  = glGetUniformLocation(scene_program, "texture_sampler");
         glUniform1i(texture_sampler, 0);
+
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 
