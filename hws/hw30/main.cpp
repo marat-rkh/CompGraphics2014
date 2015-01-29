@@ -386,33 +386,6 @@ private:
         glDisableVertexAttribArray(0);
         glDisableVertexAttribArray(1);
     }
-
-//    void render_offscreen(void) {
-//        glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fbo); // Bind our frame buffer for rendering
-//        glPushAttrib(GL_VIEWPORT_BIT | GL_ENABLE_BIT); // Push our glEnable and glViewport states
-//        glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT); // Set the size of the frame buffer view port
-
-//        glBindTexture(GL_TEXTURE_2D, texture_id);
-//        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear it
-//        render_scene();
-//        glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
-
-//        glPopAttrib(); // Restore our glEnable and glViewport states
-//        glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0); // Unbind our texture
-//    }
-
-//    void render_scene_as_texture (void) {
-//        geom_obj prev_obj = cur_obj;
-//        cur_obj = QUAD;
-//        set_data_buffer();
-
-//        glBindTexture(GL_TEXTURE_2D, fbo_texture); // Bind our frame buffer texture
-//        render_scene();
-//        glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
-
-//        cur_obj = prev_obj;
-//        set_data_buffer();
-//    }
 };
 
 // global, because display_func callback needs it
