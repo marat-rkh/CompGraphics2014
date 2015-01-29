@@ -64,7 +64,8 @@ struct program_state {
     void on_display_event() {
 //        glBindTexture(GL_TEXTURE_2D, texture_id);
 //        draw();
-        display();
+//        glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
+        render_right();
         TwDraw();
         glutSwapBuffers();
     }
@@ -256,11 +257,14 @@ private:
         glDisableVertexAttribArray(1);
     }
 
+    float cur_window_width() { return glutGet(GLUT_WINDOW_WIDTH); }
+    float cur_window_height() { return glutGet(GLUT_WINDOW_HEIGHT); }
+
     void initFrameBufferDepthBuffer(void) {
         glGenRenderbuffersEXT(1, &fbo_depth); // Generate one render buffer and store the ID in fbo_depth
         glBindRenderbufferEXT(GL_RENDERBUFFER_EXT, fbo_depth); // Bind the fbo_depth render buffer
 
-        glRenderbufferStorageEXT(GL_RENDERBUFFER_EXT, GL_DEPTH_COMPONENT, WINDOW_WIDTH, WINDOW_HEIGHT); // Set the render buffer storage to be a depth component, with a width and height of the window
+        glRenderbufferStorageEXT(GL_RENDERBUFFER_EXT, GL_DEPTH_COMPONENT, cur_window_width(), cur_window_height()); // Set the render buffer storage to be a depth component, with a width and height of the window
         glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT, fbo_depth); // Set the render buffer of this buffer to the depth buffer
 
         glBindRenderbufferEXT(GL_RENDERBUFFER_EXT, 0); // Unbind the render buffer
@@ -270,13 +274,8 @@ private:
         glGenTextures(1, &fbo_texture); // Generate one texture
         glBindTexture(GL_TEXTURE_2D, fbo_texture); // Bind the texture fbo_texture
 
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, WINDOW_WIDTH, WINDOW_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL); // Create a standard texture with the width and height of our window
-
-        // Setup the basic texture parameters
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, cur_window_width(), cur_window_height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL); // Create a standard texture with the width and height of our window
+        set_texture_filtration();
 
         // Unbind the texture
         glBindTexture(GL_TEXTURE_2D, 0);
@@ -300,21 +299,21 @@ private:
         glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0); // Unbind our frame buffer
     }
 
-    void renderTeapotScene(void) {
+    void render_offscreen(void) {
         glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fbo); // Bind our frame buffer for rendering
-//        glPushAttrib(GL_VIEWPORT_BIT | GL_ENABLE_BIT); // Push our glEnable and glViewport states
-//        glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT); // Set the size of the frame buffer view port
+        glPushAttrib(GL_VIEWPORT_BIT | GL_ENABLE_BIT); // Push our glEnable and glViewport states
+        glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT); // Set the size of the frame buffer view port
 
         glBindTexture(GL_TEXTURE_2D, texture_id);
         draw();
         glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
 
-//        glPopAttrib(); // Restore our glEnable and glViewport states
+        glPopAttrib(); // Restore our glEnable and glViewport states
         glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0); // Unbind our texture
     }
 
-    void display (void) {
-        renderTeapotScene(); // Render our teapot scene into our frame buffer
+    void render_right (void) {
+        render_offscreen(); // Render our teapot scene into our frame buffer
 
         geom_obj prev_obj = cur_obj;
         cur_obj = QUAD;
@@ -381,7 +380,7 @@ void keyboard_func(unsigned char button, int x, int y) {
 void reshape_func(int width, int height) {
    if (width <= 0 || height <= 0)
       return;
-   glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
+   glViewport(0, 0, width, height);
    TwWindowSize(width, height);
 }
 
