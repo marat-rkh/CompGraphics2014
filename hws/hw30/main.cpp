@@ -53,7 +53,7 @@ struct program_state {
         utils::read_obj_file(QUAD_MODEL_PATH, quad.vertices, quad.tex_mapping, quad.normals);
         utils::read_obj_file(CYLINDER_MODEL_PATH, cylinder.vertices, cylinder.tex_mapping, cylinder.normals);
         utils::read_obj_file(SPHERE_MODEL_PATH, sphere.vertices, sphere.tex_mapping, sphere.normals);
-        initFrameBuffer();
+        init_framebuffer();
         set_shaders();
         set_draw_configs();
         init_textures();
@@ -65,6 +65,7 @@ struct program_state {
         float const half_w = cur_window_width() / 2 - 5;
         float const right_x = cur_window_width() / 2 + 5;
 
+        glPolygonMode(GL_FRONT_AND_BACK, wireframe_mode ? GL_LINE : GL_FILL);
         glEnable(GL_SCISSOR_TEST);
 
         glScissor(0, 0, cur_window_width(), cur_window_height());
@@ -99,6 +100,7 @@ struct program_state {
         geom_obj prev_obj = cur_obj;
         cur_obj = QUAD;
         set_data_buffer();
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
         glBindTexture(GL_TEXTURE_2D, fbo_texture); // Bind our frame buffer texture
         render_filtered();
@@ -120,11 +122,7 @@ struct program_state {
         set_data_buffer();
     }
 
-    void switch_polygon_mode() {
-        wireframe_mode = !wireframe_mode;
-        set_draw_configs();
-        on_display_event();
-    }
+    void switch_polygon_mode() { wireframe_mode = !wireframe_mode; }
 
     void next_filtering_mode() {
         switch(filter) {
@@ -135,7 +133,6 @@ struct program_state {
         glBindTexture(GL_TEXTURE_2D, texture_id);
         set_texture_filtration();
         glBindTexture(GL_TEXTURE_2D, 0);
-        on_display_event();
     }
 
     ~program_state() {
@@ -219,9 +216,6 @@ private:
         glEnable(GL_TEXTURE_2D);
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LESS);
-
-        int mode = wireframe_mode ? GL_LINE : GL_FILL;
-        glPolygonMode(GL_FRONT_AND_BACK, mode);
     }
 
     void init_textures() {
@@ -319,7 +313,7 @@ private:
     float cur_window_width() { return glutGet(GLUT_WINDOW_WIDTH); }
     float cur_window_height() { return glutGet(GLUT_WINDOW_HEIGHT); }
 
-    void initFrameBufferDepthBuffer(void) {
+    void init_framebuffer_depth_buf(void) {
         glGenRenderbuffersEXT(1, &fbo_depth); // Generate one render buffer and store the ID in fbo_depth
         glBindRenderbufferEXT(GL_RENDERBUFFER_EXT, fbo_depth); // Bind the fbo_depth render buffer
 
@@ -329,7 +323,7 @@ private:
         glBindRenderbufferEXT(GL_RENDERBUFFER_EXT, 0); // Unbind the render buffer
     }
 
-    void initFrameBufferTexture(void) {
+    void init_framebuffer_texture(void) {
         glGenTextures(1, &fbo_texture); // Generate one texture
         glBindTexture(GL_TEXTURE_2D, fbo_texture); // Bind the texture fbo_texture
 
@@ -340,9 +334,9 @@ private:
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 
-    void initFrameBuffer(void) {
-        initFrameBufferDepthBuffer(); // Initialize our frame buffer depth buffer
-        initFrameBufferTexture(); // Initialize our frame buffer texture
+    void init_framebuffer(void) {
+        init_framebuffer_depth_buf(); // Initialize our frame buffer depth buffer
+        init_framebuffer_texture(); // Initialize our frame buffer texture
 
         glGenFramebuffersEXT(1, &fbo); // Generate one frame buffer and store the ID in fbo
         glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fbo); // Bind our frame buffer
