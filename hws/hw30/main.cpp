@@ -62,10 +62,20 @@ struct program_state {
     }
 
     void on_display_event() {
-//        glBindTexture(GL_TEXTURE_2D, texture_id);
-//        draw();
-//        glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
-        render_right();
+        float const half_w = cur_window_width() / 2;
+
+        render_offscreen();
+
+        glViewport(0, 0, half_w, cur_window_height());
+
+        glBindTexture(GL_TEXTURE_2D, texture_id);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        render_scene();
+        glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
+
+        glViewport(half_w, 0, half_w, cur_window_height());
+        render_scene_as_texture();
+
         TwDraw();
         glutSwapBuffers();
     }
@@ -98,10 +108,16 @@ struct program_state {
 
     ~program_state() {
         glBindBuffer(GL_ARRAY_BUFFER, 0);
-        glDeleteProgram(program);
-        glDeleteShader(vx_shader);
-        glDeleteShader(frag_shader);
+        glDeleteProgram(scene_program);
+        glDeleteShader(scene_vx_shader);
+        glDeleteShader(scene_frag_shader);
+        glDeleteProgram(filtered_program);
+        glDeleteShader(filtered_vx_shader);
+        glDeleteShader(filtered_frag_shader);
+
         glDeleteBuffers(1, &vx_buffer);
+        glDeleteBuffers(1, &tex_buffer);
+        glDeleteBuffers(1, &norms_buffer);
     }
 
 private:
@@ -109,9 +125,12 @@ private:
     geom_obj cur_obj;
     filtering_mode filter;
 
-    GLuint vx_shader;
-    GLuint frag_shader;
-    GLuint program;
+    GLuint scene_vx_shader;
+    GLuint scene_frag_shader;
+    GLuint scene_program;
+    GLuint filtered_vx_shader;
+    GLuint filtered_frag_shader;
+    GLuint filtered_program;
 
     GLuint vx_buffer;
     GLuint tex_buffer;
@@ -135,8 +154,10 @@ private:
 
     const char* TEXTURE_PATH = "..//resources//wall.png";
 
-    const char* VERTEX_SHADER_PATH = "..//shaders//0.glslvs";
-    const char* FRAGMENT_SHADER_PATH = "..//shaders//0.glslfs";
+    const char* SCENE_VERTEX_SHADER_PATH = "..//shaders//for_scene.vs";
+    const char* SCENE_FRAGMENT_SHADER_PATH = "..//shaders//for_scene.fs";
+    const char* FILTERED_VERTEX_SHADER_PATH = "..//shaders//for_filtered.vs";
+    const char* FILTERED_FRAGMENT_SHADER_PATH = "..//shaders//for_filtered.fs";
 
     vertex_attr const IN_POS = { "vert_pos_modelspace", 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0 };
     vertex_attr const VERTEX_UV = { "vert_uv", 2, GL_FLOAT, GL_FALSE, 2 * sizeof(GLfloat), 0 };
@@ -152,9 +173,13 @@ private:
     }
 
     void set_shaders() {
-        vx_shader = create_shader(GL_VERTEX_SHADER, VERTEX_SHADER_PATH);
-        frag_shader = create_shader(GL_FRAGMENT_SHADER, FRAGMENT_SHADER_PATH);
-        program = create_program(vx_shader, frag_shader);
+        scene_vx_shader = create_shader(GL_VERTEX_SHADER, SCENE_VERTEX_SHADER_PATH);
+        scene_frag_shader = create_shader(GL_FRAGMENT_SHADER, SCENE_FRAGMENT_SHADER_PATH);
+        scene_program = create_program(scene_vx_shader, scene_frag_shader);
+
+        filtered_vx_shader = create_shader(GL_VERTEX_SHADER, FILTERED_VERTEX_SHADER_PATH);
+        filtered_frag_shader = create_shader(GL_FRAGMENT_SHADER, FILTERED_FRAGMENT_SHADER_PATH);
+        filtered_program = create_program(filtered_vx_shader, filtered_frag_shader);
     }
 
     void set_draw_configs() {
@@ -174,7 +199,7 @@ private:
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, tex_data.width, tex_data.height,
                      0, tex_data.format, GL_UNSIGNED_BYTE, tex_data.data_ptr);
         set_texture_filtration();
-        texture_sampler  = glGetUniformLocation(program, "texture_sampler");
+        texture_sampler  = glGetUniformLocation(scene_program, "texture_sampler");
         glUniform1i(texture_sampler, 0);
         glBindTexture(GL_TEXTURE_2D, 0);
     }
@@ -218,9 +243,8 @@ private:
                      data.normals_data(), GL_STATIC_DRAW);
     }
 
-    void draw() {
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glUseProgram(program);
+    void render_scene() {
+        glUseProgram(scene_program);
 
         float const w = (float)glutGet(GLUT_WINDOW_WIDTH);
         float const h = (float)glutGet(GLUT_WINDOW_HEIGHT);
@@ -230,31 +254,32 @@ private:
         mat4 const modelview = view * model;
         mat4 const mvp = proj * modelview;
 
-        GLuint location = glGetUniformLocation(program, "mvp");
+        GLuint location = glGetUniformLocation(scene_program, "mvp");
         glUniformMatrix4fv(location, 1, GL_FALSE, &mvp[0][0]);
-        location = glGetUniformLocation(program, "model");
+        location = glGetUniformLocation(scene_program, "model");
         glUniformMatrix4fv(location, 1, GL_FALSE, &model[0][0]);
-        location = glGetUniformLocation(program, "view");
+        location = glGetUniformLocation(scene_program, "view");
         glUniformMatrix4fv(location, 1, GL_FALSE, &view[0][0]);
 
         vec3 const lightPos = vec3(mat4_cast(light_src_rotation) * vec4(13, 13, 8, 1));
-        glUniform3f(glGetUniformLocation(program, "lightpos_worldspace"), lightPos[0], lightPos[1], lightPos[2]);
-        glUniform1f(glGetUniformLocation(program, "tex_coords_scale"), tex_coords_scale);
-        glUniform3f(glGetUniformLocation(program, "light_color"), light_color[0], light_color[1], light_color[2]);
-        glUniform1f(glGetUniformLocation(program, "light_power"), light_power);
-        glUniform3f(glGetUniformLocation(program, "ambient"), ambient, ambient, ambient);
-        glUniform3f(glGetUniformLocation(program, "specular"), specular, specular, specular);
+        glUniform3f(glGetUniformLocation(scene_program, "lightpos_worldspace"), lightPos[0], lightPos[1], lightPos[2]);
+        glUniform1f(glGetUniformLocation(scene_program, "tex_coords_scale"), tex_coords_scale);
+        glUniform3f(glGetUniformLocation(scene_program, "light_color"), light_color[0], light_color[1], light_color[2]);
+        glUniform1f(glGetUniformLocation(scene_program, "light_power"), light_power);
+        glUniform3f(glGetUniformLocation(scene_program, "ambient"), ambient, ambient, ambient);
+        glUniform3f(glGetUniformLocation(scene_program, "specular"), specular, specular, specular);
 
         glBindBuffer(GL_ARRAY_BUFFER, vx_buffer);
-        utils::set_vertex_attr_ptr(program, IN_POS);
+        utils::set_vertex_attr_ptr(scene_program, IN_POS);
         glBindBuffer(GL_ARRAY_BUFFER, tex_buffer);
-        utils::set_vertex_attr_ptr(program, VERTEX_UV);
+        utils::set_vertex_attr_ptr(scene_program, VERTEX_UV);
         glBindBuffer(GL_ARRAY_BUFFER, norms_buffer);
-        utils::set_vertex_attr_ptr(program, IN_NORM);
+        utils::set_vertex_attr_ptr(scene_program, IN_NORM);
 
         glDrawArrays(GL_TRIANGLES, 0, cur_draw_data().vertices_num());
         glDisableVertexAttribArray(0);
         glDisableVertexAttribArray(1);
+        glDisableVertexAttribArray(2);
     }
 
     float cur_window_width() { return glutGet(GLUT_WINDOW_WIDTH); }
@@ -301,26 +326,25 @@ private:
 
     void render_offscreen(void) {
         glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fbo); // Bind our frame buffer for rendering
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear it
         glPushAttrib(GL_VIEWPORT_BIT | GL_ENABLE_BIT); // Push our glEnable and glViewport states
         glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT); // Set the size of the frame buffer view port
 
         glBindTexture(GL_TEXTURE_2D, texture_id);
-        draw();
+        render_scene();
         glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
 
         glPopAttrib(); // Restore our glEnable and glViewport states
         glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0); // Unbind our texture
     }
 
-    void render_right (void) {
-        render_offscreen(); // Render our teapot scene into our frame buffer
-
+    void render_scene_as_texture (void) {
         geom_obj prev_obj = cur_obj;
         cur_obj = QUAD;
         set_data_buffer();
 
         glBindTexture(GL_TEXTURE_2D, fbo_texture); // Bind our frame buffer texture
-        draw();
+        render_scene();
         glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
 
         cur_obj = prev_obj;
