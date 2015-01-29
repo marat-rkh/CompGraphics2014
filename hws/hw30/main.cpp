@@ -64,7 +64,14 @@ struct program_state {
     void on_display_event() {
         float const half_w = cur_window_width() / 2;
 
-        render_offscreen();
+        bind_offscreen_buffer();
+
+        glBindTexture(GL_TEXTURE_2D, texture_id);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        render_scene();
+        glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
+
+        unbind_offscreen_buffer();
 
         glViewport(0, 0, half_w, cur_window_height());
 
@@ -74,7 +81,17 @@ struct program_state {
         glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
 
         glViewport(half_w, 0, half_w, cur_window_height());
-        render_scene_as_texture();
+
+        geom_obj prev_obj = cur_obj;
+        cur_obj = QUAD;
+        set_data_buffer();
+
+        glBindTexture(GL_TEXTURE_2D, fbo_texture); // Bind our frame buffer texture
+        render_scene();
+        glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
+
+        cur_obj = prev_obj;
+        set_data_buffer();
 
         TwDraw();
         glutSwapBuffers();
@@ -324,32 +341,43 @@ private:
         glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0); // Unbind our frame buffer
     }
 
-    void render_offscreen(void) {
+    void bind_offscreen_buffer() {
         glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fbo); // Bind our frame buffer for rendering
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear it
         glPushAttrib(GL_VIEWPORT_BIT | GL_ENABLE_BIT); // Push our glEnable and glViewport states
         glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT); // Set the size of the frame buffer view port
+    }
 
-        glBindTexture(GL_TEXTURE_2D, texture_id);
-        render_scene();
-        glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
-
+    void unbind_offscreen_buffer() {
         glPopAttrib(); // Restore our glEnable and glViewport states
         glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0); // Unbind our texture
     }
 
-    void render_scene_as_texture (void) {
-        geom_obj prev_obj = cur_obj;
-        cur_obj = QUAD;
-        set_data_buffer();
+//    void render_offscreen(void) {
+//        glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fbo); // Bind our frame buffer for rendering
+//        glPushAttrib(GL_VIEWPORT_BIT | GL_ENABLE_BIT); // Push our glEnable and glViewport states
+//        glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT); // Set the size of the frame buffer view port
 
-        glBindTexture(GL_TEXTURE_2D, fbo_texture); // Bind our frame buffer texture
-        render_scene();
-        glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
+//        glBindTexture(GL_TEXTURE_2D, texture_id);
+//        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear it
+//        render_scene();
+//        glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
 
-        cur_obj = prev_obj;
-        set_data_buffer();
-    }
+//        glPopAttrib(); // Restore our glEnable and glViewport states
+//        glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0); // Unbind our texture
+//    }
+
+//    void render_scene_as_texture (void) {
+//        geom_obj prev_obj = cur_obj;
+//        cur_obj = QUAD;
+//        set_data_buffer();
+
+//        glBindTexture(GL_TEXTURE_2D, fbo_texture); // Bind our frame buffer texture
+//        render_scene();
+//        glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
+
+//        cur_obj = prev_obj;
+//        set_data_buffer();
+//    }
 };
 
 // global, because display_func callback needs it
