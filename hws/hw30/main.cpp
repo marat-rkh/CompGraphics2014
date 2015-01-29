@@ -62,38 +62,40 @@ struct program_state {
     }
 
     void on_display_event() {
-        float const half_w = cur_window_width() / 2 - 5;
-        float const right_x = cur_window_width() / 2 + 5;
+        float const window_width = cur_window_width();
+        float const window_height = cur_window_height();
+        float const subwindow_width = window_width / 2 - 5;
+        float const right_x = window_width / 2 + 5;
 
         glPolygonMode(GL_FRONT_AND_BACK, wireframe_mode ? GL_LINE : GL_FILL);
         glEnable(GL_SCISSOR_TEST);
 
-        glScissor(0, 0, cur_window_width(), cur_window_height());
+        glScissor(0, 0, window_width, window_height);
         glClearColor(0.0f, 1.0f, 0.0f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         bind_offscreen_buffer();
 
         glBindTexture(GL_TEXTURE_2D, texture_id);
-        glScissor(0, 0, cur_window_width(), cur_window_height());
+        glScissor(0, 0, window_width, window_height);
         glClearColor(0.0f, 0.0f, 0.4f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        render_scene();
+        render_scene(window_width, window_height);
         glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
 
         unbind_offscreen_buffer();
 
-        glViewport(0, 0, half_w, cur_window_height());
-        glScissor(0, 0, half_w, cur_window_height());
+        glViewport(0, 0, subwindow_width, window_height);
+        glScissor(0, 0, subwindow_width, window_height);
         glClearColor(0.0f, 0.0f, 0.4f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glBindTexture(GL_TEXTURE_2D, texture_id);
-        render_scene();
+        render_scene(subwindow_width, window_height);
         glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
 
-        glViewport(right_x, 0, half_w, cur_window_height());
-        glScissor(right_x, 0, half_w, cur_window_height());
+        glViewport(right_x, 0, subwindow_width, window_height);
+        glScissor(right_x, 0, subwindow_width, window_height);
         glClearColor(0.0f, 0.0f, 0.4f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -271,12 +273,10 @@ private:
                      data.normals_data(), GL_STATIC_DRAW);
     }
 
-    void render_scene() {
+    void render_scene(float window_width, float window_height) {
         glUseProgram(scene_program);
 
-        float const w = (float)glutGet(GLUT_WINDOW_WIDTH);
-        float const h = (float)glutGet(GLUT_WINDOW_HEIGHT);
-        mat4 const proj = perspective(45.0f, w / h, 0.1f, 100.0f);
+        mat4 const proj = perspective(45.0f, window_width / window_height, 0.1f, 100.0f);
         mat4 const model = mat4_cast(rotation_by_control);
         mat4 const view = lookAt(vec3(-2, 3, 6), vec3(0, 0, 0), vec3(0, 1, 0));
         mat4 const modelview = view * model;
@@ -327,7 +327,7 @@ private:
         glGenTextures(1, &fbo_texture); // Generate one texture
         glBindTexture(GL_TEXTURE_2D, fbo_texture); // Bind the texture fbo_texture
 
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, cur_window_width(), cur_window_height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL); // Create a standard texture with the width and height of our window
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, cur_window_width(), cur_window_height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
         set_texture_filtration();
 
         // Unbind the texture
@@ -366,16 +366,16 @@ private:
     void render_filtered() {
         glUseProgram(filtered_program);
 
-        float const w = (float)glutGet(GLUT_WINDOW_WIDTH);
-        float const h = (float)glutGet(GLUT_WINDOW_HEIGHT);
-        mat4 const proj = perspective(45.0f, w / h, 0.1f, 100.0f);
-        mat4 const model = mat4_cast(rotation_by_control);
-        mat4 const view = lookAt(vec3(-2, 3, 6), vec3(0, 0, 0), vec3(0, 1, 0));
-        mat4 const modelview = view * model;
-        mat4 const mvp = proj * modelview;
+//        float const w = (float)glutGet(GLUT_WINDOW_WIDTH);
+//        float const h = (float)glutGet(GLUT_WINDOW_HEIGHT);
+//        mat4 const proj = perspective(45.0f, w / h, 0.1f, 100.0f);
+//        mat4 const model = mat4_cast(rotation_by_control);
+//        mat4 const view = lookAt(vec3(-2, 3, 6), vec3(0, 0, 0), vec3(0, 1, 0));
+//        mat4 const modelview = view * model;
+//        mat4 const mvp = proj * modelview;
 
-        GLuint location = glGetUniformLocation(scene_program, "mvp");
-        glUniformMatrix4fv(location, 1, GL_FALSE, &mvp[0][0]);
+//        GLuint location = glGetUniformLocation(scene_program, "mvp");
+//        glUniformMatrix4fv(location, 1, GL_FALSE, &mvp[0][0]);
 
         glBindBuffer(GL_ARRAY_BUFFER, vx_buffer);
         utils::set_vertex_attr_ptr(scene_program, IN_POS);
