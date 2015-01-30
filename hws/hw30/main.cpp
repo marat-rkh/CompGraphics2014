@@ -7,7 +7,7 @@
 size_t const WINDOW_WIDTH  = 800;
 size_t const WINDOW_HEIGHT = 800;
 
-enum geom_obj { QUAD, CYLINDER, SPHERE };
+enum geom_obj { QUAD, CYLINDER, SPHERE, BACK_QUAD };
 enum filtering_mode { NEAREST, LINEAR, MIPMAP };
 
 struct draw_data {
@@ -53,6 +53,7 @@ struct program_state {
         utils::read_obj_file(QUAD_MODEL_PATH, quad.vertices, quad.tex_mapping, quad.normals);
         utils::read_obj_file(CYLINDER_MODEL_PATH, cylinder.vertices, cylinder.tex_mapping, cylinder.normals);
         utils::read_obj_file(SPHERE_MODEL_PATH, sphere.vertices, sphere.tex_mapping, sphere.normals);
+        init_background_quad();
         init_framebuffer();
         set_shaders();
         set_draw_configs();
@@ -70,28 +71,35 @@ struct program_state {
         glPolygonMode(GL_FRONT_AND_BACK, wireframe_mode ? GL_LINE : GL_FILL);
         glEnable(GL_SCISSOR_TEST);
 
+        glViewport(0, 0, window_width, window_height);
         glScissor(0, 0, window_width, window_height);
         glClearColor(0.0f, 1.0f, 0.0f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         bind_offscreen_buffer();
 
-        glBindTexture(GL_TEXTURE_2D, texture_id);
         glScissor(0, 0, window_width, window_height);
-        glClearColor(0.0f, 0.0f, 0.4f, 0.0f);
+        glClearColor(0.0f, 1.0f, 0.4f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        glBindTexture(GL_TEXTURE_2D, texture_id);
         render_scene(window_width, window_height);
         glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
 
         unbind_offscreen_buffer();
+
+        geom_obj prev_obj = cur_obj;
+        cur_obj = BACK_QUAD;
+        set_data_buffer();
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
         glViewport(0, 0, subwindow_width, window_height);
         glScissor(0, 0, subwindow_width, window_height);
         glClearColor(0.0f, 0.0f, 0.4f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        glBindTexture(GL_TEXTURE_2D, texture_id);
-        render_scene(subwindow_width, window_height);
+        glBindTexture(GL_TEXTURE_2D, fbo_texture); // Bind our frame buffer texture
+        render_filtered(subwindow_width, window_height);
         glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
 
         glViewport(right_x, 0, subwindow_width, window_height);
@@ -99,13 +107,8 @@ struct program_state {
         glClearColor(0.0f, 0.0f, 0.4f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        geom_obj prev_obj = cur_obj;
-        cur_obj = QUAD;
-        set_data_buffer();
-        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-
         glBindTexture(GL_TEXTURE_2D, fbo_texture); // Bind our frame buffer texture
-        render_filtered();
+        render_filtered(subwindow_width, window_height);
         glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
 
         cur_obj = prev_obj;
@@ -135,6 +138,10 @@ struct program_state {
         glBindTexture(GL_TEXTURE_2D, texture_id);
         set_texture_filtration();
         glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
+    void on_resize_event() {
+        init_background_quad();
     }
 
     ~program_state() {
@@ -187,6 +194,8 @@ private:
     const char* SPHERE_MODEL_PATH = "..//resources//sphere.obj";
     draw_data sphere;
 
+    draw_data back_quad;
+
     const char* TEXTURE_PATH = "..//resources//wall.png";
 
     const char* SCENE_VERTEX_SHADER_PATH = "..//shaders//for_scene.vs";
@@ -203,6 +212,7 @@ private:
         case QUAD: return quad;
         case CYLINDER: return cylinder;
         case SPHERE: return sphere;
+        case BACK_QUAD: return back_quad;
         default: throw msg_exception("cur_obj is undefined");
         }
     }
@@ -282,7 +292,7 @@ private:
 
         mat4 const proj = perspective(45.0f, window_width / window_height, 0.1f, 100.0f);
         mat4 const model = mat4_cast(rotation_by_control);
-        mat4 const view = lookAt(vec3(-2, 3, 6), vec3(0, 0, 0), vec3(0, 1, 0));
+        mat4 const view = lookAt(vec3(0, 0, 6), vec3(0, 0, 0), vec3(0, 1, 0));
         mat4 const modelview = view * model;
         mat4 const mvp = proj * modelview;
 
@@ -367,12 +377,12 @@ private:
         glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0); // Unbind our texture
     }
 
-    void render_filtered() {
+    void render_filtered(float window_width, float window_height) {
         glUseProgram(filtered_program);
 
-        mat4 const proj = perspective(45.0f, WINDOW_WIDTH * 0.5f / WINDOW_HEIGHT, 0.1f, 100.0f);
+        mat4 const proj = perspective(45.0f, window_width / window_height, 0.1f, 100.0f);
         mat4 const model;
-        mat4 const view = lookAt(vec3(0, 0, -2.5), vec3(0, 0, 0), vec3(0, -1, 0));
+        mat4 const view = lookAt(vec3(0, 0, 6), vec3(0, 0, 0), vec3(0, 1, 0));
         mat4 const modelview = view * model;
         mat4 const mvp = proj * modelview;
 
@@ -384,9 +394,33 @@ private:
         glBindBuffer(GL_ARRAY_BUFFER, tex_buffer);
         utils::set_vertex_attr_ptr(scene_program, VERTEX_UV);
 
-        glDrawArrays(GL_TRIANGLES, 0, cur_draw_data().vertices_num());
+        glDrawArrays(GL_QUADS, 0, cur_draw_data().vertices_num());
         glDisableVertexAttribArray(0);
         glDisableVertexAttribArray(1);
+    }
+
+    void init_background_quad() {
+        float const cur_win_width = cur_window_width();
+        float const cur_win_height = cur_window_height();
+        float quad_half_width = 1;
+        float quad_half_height = 1;
+        if(cur_win_height > cur_win_width) {
+            quad_half_height *= (cur_win_height / cur_win_width);
+        } else {
+            quad_half_width *= (cur_win_width / cur_win_height);
+        }
+        back_quad.vertices = {
+            -quad_half_width, -quad_half_height, 0,
+            quad_half_width,  -quad_half_height, 0,
+            quad_half_width,   quad_half_height, 0,
+            -quad_half_width,  quad_half_height, 0
+        };
+        back_quad.tex_mapping = {
+            0, 0,
+            1, 0,
+            1, 1,
+            0, 1
+        };
     }
 };
 
@@ -443,6 +477,7 @@ void reshape_func(int width, int height) {
    if (width <= 0 || height <= 0)
       return;
    glViewport(0, 0, width, height);
+   prog_state.on_resize_event();
    TwWindowSize(width, height);
 }
 
