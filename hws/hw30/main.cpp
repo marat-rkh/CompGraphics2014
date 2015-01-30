@@ -149,6 +149,10 @@ struct program_state {
         glDeleteBuffers(1, &vx_buffer);
         glDeleteBuffers(1, &tex_buffer);
         glDeleteBuffers(1, &norms_buffer);
+
+        glDeleteBuffers(1, &fbo);
+        glDeleteBuffers(1, &fbo_depth);
+        glDeleteTextures(1, &fbo_texture);
     }
 
 private:
@@ -366,9 +370,11 @@ private:
     void render_filtered() {
         glUseProgram(filtered_program);
 
-        mat4 mvp;
-        mvp = rotate(mvp, 180.0f, vec3(0.0f, 0.0f, 1.0f));
-        mvp = rotate(mvp, 180.0f, vec3(0.0f, 1.0f, 0.0f));
+        mat4 const proj = perspective(45.0f, WINDOW_WIDTH * 0.5f / WINDOW_HEIGHT, 0.1f, 100.0f);
+        mat4 const model;
+        mat4 const view = lookAt(vec3(0, 0, -2.5), vec3(0, 0, 0), vec3(0, -1, 0));
+        mat4 const modelview = view * model;
+        mat4 const mvp = proj * modelview;
 
         GLuint location = glGetUniformLocation(scene_program, "mvp");
         glUniformMatrix4fv(location, 1, GL_FALSE, &mvp[0][0]);
