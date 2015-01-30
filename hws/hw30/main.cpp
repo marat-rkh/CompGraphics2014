@@ -366,16 +366,12 @@ private:
     void render_filtered() {
         glUseProgram(filtered_program);
 
-//        float const w = (float)glutGet(GLUT_WINDOW_WIDTH);
-//        float const h = (float)glutGet(GLUT_WINDOW_HEIGHT);
-//        mat4 const proj = perspective(45.0f, w / h, 0.1f, 100.0f);
-//        mat4 const model = mat4_cast(rotation_by_control);
-//        mat4 const view = lookAt(vec3(-2, 3, 6), vec3(0, 0, 0), vec3(0, 1, 0));
-//        mat4 const modelview = view * model;
-//        mat4 const mvp = proj * modelview;
+        mat4 mvp;
+        mvp = rotate(mvp, 180.0f, vec3(0.0f, 0.0f, 1.0f));
+        mvp = rotate(mvp, 180.0f, vec3(0.0f, 1.0f, 0.0f));
 
-//        GLuint location = glGetUniformLocation(scene_program, "mvp");
-//        glUniformMatrix4fv(location, 1, GL_FALSE, &mvp[0][0]);
+        GLuint location = glGetUniformLocation(scene_program, "mvp");
+        glUniformMatrix4fv(location, 1, GL_FALSE, &mvp[0][0]);
 
         glBindBuffer(GL_ARRAY_BUFFER, vx_buffer);
         utils::set_vertex_attr_ptr(scene_program, IN_POS);
