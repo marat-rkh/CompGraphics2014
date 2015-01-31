@@ -4,11 +4,12 @@
 #include <FreeImage.h>
 
 // Размеры окна по-умолчанию
-size_t const WINDOW_WIDTH  = 800;
-size_t const WINDOW_HEIGHT = 800;
+size_t const DEFAULT_WINDOW_WIDTH  = 800;
+size_t const DEFAULT_WINDOW_HEIGHT = 800;
 
 enum geom_obj { QUAD, CYLINDER, SPHERE, BACK_QUAD };
-enum filtering_mode { NEAREST, LINEAR, MIPMAP };
+enum tex_filtering_mode { NEAREST, LINEAR, MIPMAP };
+enum filter { NO_FILTER = 0, BOX_BLUR, GAUSSIAN_BLUR, SOBEL_FILTER };
 
 struct draw_data {
     vector<GLfloat> vertices;
@@ -39,12 +40,13 @@ struct program_state {
     program_state()
         : wireframe_mode(false)
         , cur_obj(QUAD)
-        , filter(NEAREST)
+        , cur_tex_filtering(NEAREST)
         , tex_coords_scale(1)
         , light_color(1, 1, 1)
         , light_power(500)
         , ambient(0.1)
         , specular(0.5)
+        , cur_filter(NO_FILTER)
     {}
 
     // this function must be called before main loop but after
@@ -79,7 +81,7 @@ struct program_state {
         bind_offscreen_buffer();
 
         glScissor(0, 0, window_width, window_height);
-        glClearColor(0.0f, 1.0f, 0.4f, 0.0f);
+        glClearColor(0.0f, 0.0f, 0.4f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glBindTexture(GL_TEXTURE_2D, texture_id);
@@ -98,9 +100,14 @@ struct program_state {
         glClearColor(0.0f, 0.0f, 0.4f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+        filter cur = cur_filter;
+        cur_filter = NO_FILTER;
+
         glBindTexture(GL_TEXTURE_2D, fbo_texture); // Bind our frame buffer texture
-        render_filtered(subwindow_width, window_height);
+        render_with_filter(subwindow_width, window_height);
         glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
+
+        cur_filter = cur;
 
         glViewport(right_x, 0, subwindow_width, window_height);
         glScissor(right_x, 0, subwindow_width, window_height);
@@ -108,7 +115,7 @@ struct program_state {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glBindTexture(GL_TEXTURE_2D, fbo_texture); // Bind our frame buffer texture
-        render_filtered(subwindow_width, window_height);
+        render_with_filter(subwindow_width, window_height);
         glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
 
         cur_obj = prev_obj;
@@ -130,10 +137,10 @@ struct program_state {
     void switch_polygon_mode() { wireframe_mode = !wireframe_mode; }
 
     void next_filtering_mode() {
-        switch(filter) {
-        case NEAREST: filter = LINEAR; break;
-        case LINEAR: filter = MIPMAP; break;
-        case MIPMAP: filter = NEAREST; break;
+        switch(cur_tex_filtering) {
+        case NEAREST: cur_tex_filtering = LINEAR; break;
+        case LINEAR: cur_tex_filtering = MIPMAP; break;
+        case MIPMAP: cur_tex_filtering = NEAREST; break;
         }
         glBindTexture(GL_TEXTURE_2D, texture_id);
         set_texture_filtration();
@@ -142,6 +149,10 @@ struct program_state {
 
     void on_resize_event() {
         init_background_quad();
+    }
+
+    void on_apply_filter_event(filter f) {
+        cur_filter = f;
     }
 
     ~program_state() {
@@ -165,7 +176,7 @@ struct program_state {
 private:
     bool wireframe_mode;
     geom_obj cur_obj;
-    filtering_mode filter;
+    tex_filtering_mode cur_tex_filtering;
 
     GLuint scene_vx_shader;
     GLuint scene_frag_shader;
@@ -195,6 +206,8 @@ private:
     draw_data sphere;
 
     draw_data back_quad;
+
+    filter cur_filter;
 
     const char* TEXTURE_PATH = "..//resources//wall.png";
 
@@ -249,7 +262,7 @@ private:
     }
 
     void set_texture_filtration() {
-        switch (filter) {
+        switch (cur_tex_filtering) {
         case NEAREST:
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -264,6 +277,8 @@ private:
             glGenerateMipmap(GL_TEXTURE_2D);
             break;
         }
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     }
 
     void set_data_buffer() {
@@ -304,9 +319,12 @@ private:
         glUniformMatrix4fv(location, 1, GL_FALSE, &view[0][0]);
 
         vec3 const lightPos = vec3(mat4_cast(light_src_rotation) * vec4(13, 13, 8, 1));
-        glUniform3f(glGetUniformLocation(scene_program, "lightpos_worldspace"), lightPos[0], lightPos[1], lightPos[2]);
-        glUniform1f(glGetUniformLocation(scene_program, "tex_coords_scale"), tex_coords_scale);
-        glUniform3f(glGetUniformLocation(scene_program, "light_color"), light_color[0], light_color[1], light_color[2]);
+        glUniform3f(glGetUniformLocation(scene_program, "lightpos_worldspace"),
+                    lightPos[0], lightPos[1], lightPos[2]);
+        glUniform1f(glGetUniformLocation(scene_program, "tex_coords_scale"),
+                    tex_coords_scale);
+        glUniform3f(glGetUniformLocation(scene_program, "light_color"),
+                    light_color[0], light_color[1], light_color[2]);
         glUniform1f(glGetUniformLocation(scene_program, "light_power"), light_power);
         glUniform3f(glGetUniformLocation(scene_program, "ambient"), ambient, ambient, ambient);
         glUniform3f(glGetUniformLocation(scene_program, "specular"), specular, specular, specular);
@@ -331,8 +349,10 @@ private:
         glGenRenderbuffersEXT(1, &fbo_depth); // Generate one render buffer and store the ID in fbo_depth
         glBindRenderbufferEXT(GL_RENDERBUFFER_EXT, fbo_depth); // Bind the fbo_depth render buffer
 
-        glRenderbufferStorageEXT(GL_RENDERBUFFER_EXT, GL_DEPTH_COMPONENT, cur_window_width(), cur_window_height()); // Set the render buffer storage to be a depth component, with a width and height of the window
-        glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT, fbo_depth); // Set the render buffer of this buffer to the depth buffer
+        glRenderbufferStorageEXT(GL_RENDERBUFFER_EXT, GL_DEPTH_COMPONENT,
+                                 cur_window_width(), cur_window_height()); // Set the render buffer storage to be a depth component, with a width and height of the window
+        glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT,
+                                     GL_RENDERBUFFER_EXT, fbo_depth); // Set the render buffer of this buffer to the depth buffer
 
         glBindRenderbufferEXT(GL_RENDERBUFFER_EXT, 0); // Unbind the render buffer
     }
@@ -341,7 +361,8 @@ private:
         glGenTextures(1, &fbo_texture); // Generate one texture
         glBindTexture(GL_TEXTURE_2D, fbo_texture); // Bind the texture fbo_texture
 
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, cur_window_width(), cur_window_height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, cur_window_width(),
+                     cur_window_height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
         set_texture_filtration();
 
         // Unbind the texture
@@ -355,8 +376,10 @@ private:
         glGenFramebuffersEXT(1, &fbo); // Generate one frame buffer and store the ID in fbo
         glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fbo); // Bind our frame buffer
 
-        glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, fbo_texture, 0); // Attach the texture fbo_texture to the color buffer in our frame buffer
-        glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT, fbo_depth); // Attach the depth buffer fbo_depth to our frame buffer
+        glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT,
+                                  GL_TEXTURE_2D, fbo_texture, 0); // Attach the texture fbo_texture to the color buffer in our frame buffer
+        glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT,
+                                     GL_RENDERBUFFER_EXT, fbo_depth); // Attach the depth buffer fbo_depth to our frame buffer
 
         GLenum status = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT); // Check that status of our generated frame buffer
         if (status != GL_FRAMEBUFFER_COMPLETE_EXT) { // If the frame buffer does not report back as complete
@@ -369,7 +392,7 @@ private:
     void bind_offscreen_buffer() {
         glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fbo); // Bind our frame buffer for rendering
         glPushAttrib(GL_VIEWPORT_BIT | GL_ENABLE_BIT); // Push our glEnable and glViewport states
-        glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT); // Set the size of the frame buffer view port
+        glViewport(0, 0, DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT); // Set the size of the frame buffer view port
     }
 
     void unbind_offscreen_buffer() {
@@ -377,17 +400,34 @@ private:
         glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0); // Unbind our texture
     }
 
-    void render_filtered(float window_width, float window_height) {
+    void render_with_filter(float window_width, float window_height) {
         glUseProgram(filtered_program);
 
         mat4 const proj = perspective(45.0f, window_width / window_height, 0.1f, 100.0f);
         mat4 const model;
-        mat4 const view = lookAt(vec3(0, 0, 6), vec3(0, 0, 0), vec3(0, 1, 0));
+        mat4 const view = lookAt(vec3(0, 0, 4), vec3(0, 0, 0), vec3(0, 1, 0));
         mat4 const modelview = view * model;
         mat4 const mvp = proj * modelview;
 
-        GLuint location = glGetUniformLocation(scene_program, "mvp");
+        GLuint location = glGetUniformLocation(filtered_program, "mvp");
         glUniformMatrix4fv(location, 1, GL_FALSE, &mvp[0][0]);
+
+        switch (cur_filter) {
+        case NO_FILTER:
+            glUniform1i(glGetUniformLocation(filtered_program, "filter_type"), NO_FILTER);
+            break;
+        case BOX_BLUR:
+            glUniform1i(glGetUniformLocation(filtered_program, "filter_type"), BOX_BLUR);
+            break;
+        case GAUSSIAN_BLUR:
+            glUniform1i(glGetUniformLocation(filtered_program, "filter_type"), GAUSSIAN_BLUR);
+            break;
+        case SOBEL_FILTER:
+            glUniform1i(glGetUniformLocation(filtered_program, "filter_type"), SOBEL_FILTER);
+            break;
+        default:
+            break;
+        }
 
         glBindBuffer(GL_ARRAY_BUFFER, vx_buffer);
         utils::set_vertex_attr_ptr(scene_program, IN_POS);
@@ -429,7 +469,7 @@ program_state prog_state;
 
 void basic_init(int argc, char ** argv) {
     glutInit               (&argc, argv);
-    glutInitWindowSize     (WINDOW_WIDTH, WINDOW_HEIGHT);
+    glutInitWindowSize     (DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT);
     // Указание формата буфера экрана:
     // - GLUT_DOUBLE - двойная буферизация
     // - GLUT_RGB - 3-ёх компонентный цвет
@@ -517,11 +557,31 @@ void next_filtration_callback(void* prog_state_wrapper) {
     ps->next_filtering_mode();
 }
 
+void apply_no_filter_callback(void* prog_state_wrapper) {
+    program_state* ps = static_cast<program_state*>(prog_state_wrapper);
+    ps->on_apply_filter_event(NO_FILTER);
+}
+
+void apply_box_filter_callback(void* prog_state_wrapper) {
+    program_state* ps = static_cast<program_state*>(prog_state_wrapper);
+    ps->on_apply_filter_event(BOX_BLUR);
+}
+
+void apply_gaussian_filter_callback(void* prog_state_wrapper) {
+    program_state* ps = static_cast<program_state*>(prog_state_wrapper);
+    ps->on_apply_filter_event(GAUSSIAN_BLUR);
+}
+
+void apply_sobel_filter_callback(void* prog_state_wrapper) {
+    program_state* ps = static_cast<program_state*>(prog_state_wrapper);
+    ps->on_apply_filter_event(SOBEL_FILTER);
+}
+
 void create_controls(program_state& prog_state) {
     TwInit(TW_OPENGL, NULL);
 
     TwBar *bar = TwNewBar("Parameters");
-    TwDefine("Parameters size='500 370' color='70 100 120' valueswidth=220 iconpos=topleft");
+    TwDefine("Parameters size='400 420' color='70 100 120' valueswidth=220 iconpos=topleft");
     TwAddButton(bar, "Fullscreen toggle", toggle_fullscreen_callback, NULL,
                 "label='Toggle fullscreen mode' key=f");
     TwAddVarRW(bar, "ObjRotation", TW_TYPE_QUAT4F, &prog_state.rotation_by_control,
@@ -532,6 +592,7 @@ void create_controls(program_state& prog_state) {
                 "label='Switch wireframe mode' key=w");
     TwAddButton(bar, "Next filtration mode", next_filtration_callback, &prog_state,
                 "label='Next filtration mode' key=t");
+
     TwAddVarRW(bar, "Tex coords scale", TW_TYPE_FLOAT, &prog_state.tex_coords_scale,
                "min=0.1 max=2 step=0.1");
     TwAddVarRW(bar, "Light color R", TW_TYPE_FLOAT, &prog_state.light_color[0],
@@ -548,6 +609,15 @@ void create_controls(program_state& prog_state) {
                "min=0 max=1 step=0.1");
     TwAddVarRW(bar, "Specular", TW_TYPE_FLOAT, &prog_state.specular,
                "min=0 max=1 step=0.1");
+
+    TwAddButton(bar, "No filter", apply_no_filter_callback, &prog_state,
+                "label='No filter' key=o");
+    TwAddButton(bar, "Box blur", apply_box_filter_callback, &prog_state,
+                "label='Box blur' key=b");
+    TwAddButton(bar, "Gaussian blur", apply_gaussian_filter_callback, &prog_state,
+                "label='Gaussian blur' key=g");
+    TwAddButton(bar, "Sobel filter", apply_sobel_filter_callback, &prog_state,
+                "label='Sobel filter' key=s");
 }
 
 void remove_controls() {
