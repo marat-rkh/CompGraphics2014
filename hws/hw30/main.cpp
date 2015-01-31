@@ -30,12 +30,16 @@ struct draw_data {
 
 struct program_state {
     quat rotation_by_control;
+
     float tex_coords_scale;
     vec3 light_color;
     float light_power;
     quat light_src_rotation;
     float ambient;
     float specular;
+
+    int gaussian_kernel_radius;
+    float gaussian_variance;
 
     program_state()
         : wireframe_mode(false)
@@ -47,6 +51,8 @@ struct program_state {
         , ambient(0.1)
         , specular(0.5)
         , cur_filter(NO_FILTER)
+        , gaussian_kernel_radius(4)
+        , gaussian_variance(4)
     {}
 
     // this function must be called before main loop but after
@@ -413,19 +419,19 @@ private:
         glUniformMatrix4fv(location, 1, GL_FALSE, &mvp[0][0]);
 
         switch (cur_filter) {
-        case NO_FILTER:
-            glUniform1i(glGetUniformLocation(filtered_program, "filter_type"), NO_FILTER);
-            break;
         case BOX_BLUR:
             glUniform1i(glGetUniformLocation(filtered_program, "filter_type"), BOX_BLUR);
             break;
         case GAUSSIAN_BLUR:
             glUniform1i(glGetUniformLocation(filtered_program, "filter_type"), GAUSSIAN_BLUR);
+            glUniform1i(glGetUniformLocation(filtered_program, "gaus_radius"), gaussian_kernel_radius);
+            glUniform1f(glGetUniformLocation(filtered_program, "gaus_variance"), gaussian_variance);
             break;
         case SOBEL_FILTER:
             glUniform1i(glGetUniformLocation(filtered_program, "filter_type"), SOBEL_FILTER);
             break;
         default:
+            glUniform1i(glGetUniformLocation(filtered_program, "filter_type"), NO_FILTER);
             break;
         }
 
@@ -581,7 +587,7 @@ void create_controls(program_state& prog_state) {
     TwInit(TW_OPENGL, NULL);
 
     TwBar *bar = TwNewBar("Parameters");
-    TwDefine("Parameters size='400 420' color='70 100 120' valueswidth=220 iconpos=topleft");
+    TwDefine("Parameters size='400 470' color='70 100 120' valueswidth=220 iconpos=topleft");
     TwAddButton(bar, "Fullscreen toggle", toggle_fullscreen_callback, NULL,
                 "label='Toggle fullscreen mode' key=f");
     TwAddVarRW(bar, "ObjRotation", TW_TYPE_QUAT4F, &prog_state.rotation_by_control,
@@ -616,6 +622,10 @@ void create_controls(program_state& prog_state) {
                 "label='Box blur' key=b");
     TwAddButton(bar, "Gaussian blur", apply_gaussian_filter_callback, &prog_state,
                 "label='Gaussian blur' key=g");
+    TwAddVarRW(bar, "Gaussian kernel radius", TW_TYPE_UINT8, &prog_state.gaussian_kernel_radius,
+               "min=1 max=10 step=1");
+    TwAddVarRW(bar, "Gaussian variance", TW_TYPE_FLOAT, &prog_state.gaussian_variance,
+               "min=0.1 max=5 step=0.1");
     TwAddButton(bar, "Sobel filter", apply_sobel_filter_callback, &prog_state,
                 "label='Sobel filter' key=s");
 }
