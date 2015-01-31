@@ -41,6 +41,8 @@ struct program_state {
     int gaussian_kernel_radius;
     float gaussian_variance;
 
+    float sobel_threshold;
+
     program_state()
         : wireframe_mode(false)
         , cur_obj(QUAD)
@@ -53,6 +55,7 @@ struct program_state {
         , cur_filter(NO_FILTER)
         , gaussian_kernel_radius(4)
         , gaussian_variance(4)
+        , sobel_threshold(0.25)
     {}
 
     // this function must be called before main loop but after
@@ -87,7 +90,7 @@ struct program_state {
         bind_offscreen_buffer();
 
         glScissor(0, 0, window_width, window_height);
-        glClearColor(0.0f, 0.0f, 0.4f, 0.0f);
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glBindTexture(GL_TEXTURE_2D, texture_id);
@@ -103,7 +106,7 @@ struct program_state {
 
         glViewport(0, 0, subwindow_width, window_height);
         glScissor(0, 0, subwindow_width, window_height);
-        glClearColor(0.0f, 0.0f, 0.4f, 0.0f);
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         filter cur = cur_filter;
@@ -117,7 +120,7 @@ struct program_state {
 
         glViewport(right_x, 0, subwindow_width, window_height);
         glScissor(right_x, 0, subwindow_width, window_height);
-        glClearColor(0.0f, 0.0f, 0.4f, 0.0f);
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glBindTexture(GL_TEXTURE_2D, fbo_texture); // Bind our frame buffer texture
@@ -215,7 +218,7 @@ private:
 
     filter cur_filter;
 
-    const char* TEXTURE_PATH = "..//resources//wall.png";
+    const char* TEXTURE_PATH = "..//resources//wall3.jpg";
 
     const char* SCENE_VERTEX_SHADER_PATH = "..//shaders//for_scene.vs";
     const char* SCENE_FRAGMENT_SHADER_PATH = "..//shaders//for_scene.fs";
@@ -411,7 +414,7 @@ private:
 
         mat4 const proj = perspective(45.0f, window_width / window_height, 0.1f, 100.0f);
         mat4 const model;
-        mat4 const view = lookAt(vec3(0, 0, 4), vec3(0, 0, 0), vec3(0, 1, 0));
+        mat4 const view = lookAt(vec3(0, 0, 3), vec3(0, 0, 0), vec3(0, 1, 0));
         mat4 const modelview = view * model;
         mat4 const mvp = proj * modelview;
 
@@ -429,6 +432,7 @@ private:
             break;
         case SOBEL_FILTER:
             glUniform1i(glGetUniformLocation(filtered_program, "filter_type"), SOBEL_FILTER);
+            glUniform1f(glGetUniformLocation(filtered_program, "sobel_threshold"), sobel_threshold);
             break;
         default:
             glUniform1i(glGetUniformLocation(filtered_program, "filter_type"), NO_FILTER);
@@ -628,6 +632,8 @@ void create_controls(program_state& prog_state) {
                "min=0.1 max=5 step=0.1");
     TwAddButton(bar, "Sobel filter", apply_sobel_filter_callback, &prog_state,
                 "label='Sobel filter' key=s");
+    TwAddVarRW(bar, "Sobel post threshold", TW_TYPE_FLOAT, &prog_state.sobel_threshold,
+               "min=0 max=1 step=0.05");
 }
 
 void remove_controls() {
