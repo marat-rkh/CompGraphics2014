@@ -9,8 +9,9 @@ uniform sampler2D texture_sampler;
 uniform int filter_type;
 const int NO_FILTER = 0;
 const int BOX_BLUR = 1;
-const int GAUSSIAN_BLUR = 2;
-const int SOBEL_FILTER = 3;
+const int GAUSSIAN_HORIZONTAL_BLUR = 2;
+const int GAUSSIAN_VERTICAL_BLUR = 3;
+const int SOBEL_FILTER = 4;
 
 const float step_factor = 800;
 
@@ -36,20 +37,37 @@ void box_blur() {
 
 // gaussian blur
 float gaussian_function(int x, int y) {
-    float two_var_sq = 2 * gaus_variance * gaus_variance;
-    return 1.0f / PI * two_var_sq * exp(-1 * (x * x + y * y) / two_var_sq);
+    float numer = exp(-1 * (x * x + y * y) / (2 * gaus_variance * gaus_variance));
+    float denom = gaus_variance * gaus_variance * 2 * PI;
+    return numer / denom;
 }
 
-void gaussian_blur() {
+float gaussian_function(int x) {
+    float numer = exp(-1 * x * x / (2 * gaus_variance * gaus_variance));
+    float denom = gaus_variance * sqrt(2 * PI);
+    return numer / denom;
+}
+
+void gaussian_horizontal_blur() {
     vec3 sum = vec3(0, 0, 0);
     float kernel_sum = 0;
     for(int i = -gaus_radius; i <= gaus_radius; ++i) {
-        for(int j = -gaus_radius; j <= gaus_radius; ++j) {
-            vec3 tex_color = texture2D(texture_sampler, vec2(UV.x + i / step_factor, UV.y + j / step_factor)).rgb;
-            float weight = gaussian_function(i, j);
-            kernel_sum += weight;
-            sum += tex_color * weight;
-        }
+        vec3 tex_color = texture2D(texture_sampler, vec2(UV.x + i / step_factor, UV.y)).rgb;
+        float weight = gaussian_function(i);
+        kernel_sum += weight;
+        sum += tex_color * weight;
+    }
+    color = sum / kernel_sum;
+}
+
+void gaussian_vertical_blur() {
+    vec3 sum = vec3(0, 0, 0);
+    float kernel_sum = 0;
+    for(int i = -gaus_radius; i <= gaus_radius; ++i) {
+        vec3 tex_color = texture2D(texture_sampler, vec2(UV.x, UV.y + i / step_factor)).rgb;
+        float weight = gaussian_function(i);
+        kernel_sum += weight;
+        sum += tex_color * weight;
     }
     color = sum / kernel_sum;
 }
@@ -101,8 +119,10 @@ void sobel_filter() {
 void main() {
     if(filter_type == BOX_BLUR) {
         box_blur();
-    } else if (filter_type == GAUSSIAN_BLUR) {
-        gaussian_blur();
+    } else if (filter_type == GAUSSIAN_HORIZONTAL_BLUR) {
+        gaussian_horizontal_blur();
+    } else if (filter_type == GAUSSIAN_VERTICAL_BLUR) {
+        gaussian_vertical_blur();
     } else if (filter_type == SOBEL_FILTER) {
         sobel_filter();
     } else {

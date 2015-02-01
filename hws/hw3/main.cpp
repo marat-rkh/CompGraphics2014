@@ -9,7 +9,7 @@ size_t const DEFAULT_WINDOW_HEIGHT = 800;
 
 enum geom_obj { QUAD, CYLINDER, SPHERE, BACK_QUAD };
 enum tex_filtering_mode { NEAREST, LINEAR, MIPMAP };
-enum filter { NO_FILTER = 0, BOX_BLUR, GAUSSIAN_BLUR, SOBEL_FILTER };
+enum filter { NO_FILTER = 0, BOX_BLUR, GAUSSIAN_HORIZONTAL_BLUR, GAUSSIAN_VERTICAL_BLUR, SOBEL_FILTER };
 
 struct draw_data {
     vector<GLfloat> vertices;
@@ -65,7 +65,8 @@ struct program_state {
         utils::read_obj_file(CYLINDER_MODEL_PATH, cylinder.vertices, cylinder.tex_mapping, cylinder.normals);
         utils::read_obj_file(SPHERE_MODEL_PATH, sphere.vertices, sphere.tex_mapping, sphere.normals);
         init_background_quad();
-        init_framebuffer();
+        init_framebuffer(fbo_depth1, fbo_texture1, fbo1);
+        init_framebuffer(fbo_depth2, fbo_texture2, fbo2);
         set_shaders();
         set_draw_configs();
         init_textures();
@@ -87,7 +88,7 @@ struct program_state {
         glClearColor(0.0f, 1.0f, 0.0f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        bind_offscreen_buffer();
+        bind_offscreen_buffer(fbo1);
 
         glScissor(0, 0, window_width, window_height);
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -112,18 +113,42 @@ struct program_state {
         filter cur = cur_filter;
         cur_filter = NO_FILTER;
 
-        glBindTexture(GL_TEXTURE_2D, fbo_texture); // Bind our frame buffer texture
+        glBindTexture(GL_TEXTURE_2D, fbo_texture1); // Bind our frame buffer texture
         render_with_filter(subwindow_width, window_height);
         glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
 
         cur_filter = cur;
+
+        if(cur_filter == GAUSSIAN_HORIZONTAL_BLUR) {
+            cur = cur_filter;
+            cur_filter = GAUSSIAN_VERTICAL_BLUR;
+
+            glViewport(0, 0, window_width, window_height);
+            glScissor(0, 0, window_width, window_height);
+
+            bind_offscreen_buffer(fbo2);
+
+            glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+            glBindTexture(GL_TEXTURE_2D, fbo_texture1); // Bind our frame buffer texture
+            render_with_filter(window_width, window_height);
+            glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
+
+            unbind_offscreen_buffer();
+
+            cur_filter = cur;
+
+            glBindTexture(GL_TEXTURE_2D, fbo_texture2); // Bind our frame buffer texture
+        } else {
+            glBindTexture(GL_TEXTURE_2D, fbo_texture1); // Bind our frame buffer texture
+        }
 
         glViewport(right_x, 0, subwindow_width, window_height);
         glScissor(right_x, 0, subwindow_width, window_height);
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        glBindTexture(GL_TEXTURE_2D, fbo_texture); // Bind our frame buffer texture
         render_with_filter(subwindow_width, window_height);
         glBindTexture(GL_TEXTURE_2D, 0); // Unbind any textures
 
@@ -177,9 +202,12 @@ struct program_state {
         glDeleteBuffers(1, &tex_buffer);
         glDeleteBuffers(1, &norms_buffer);
 
-        glDeleteBuffers(1, &fbo);
-        glDeleteBuffers(1, &fbo_depth);
-        glDeleteTextures(1, &fbo_texture);
+        glDeleteBuffers(1, &fbo1);
+        glDeleteBuffers(1, &fbo_depth1);
+        glDeleteTextures(1, &fbo_texture1);
+        glDeleteBuffers(1, &fbo2);
+        glDeleteBuffers(1, &fbo_depth2);
+        glDeleteTextures(1, &fbo_texture2);
     }
 
 private:
@@ -201,9 +229,12 @@ private:
     GLuint texture_sampler;
     GLuint texture_id;
 
-    GLuint fbo; // The frame buffer object
-    GLuint fbo_depth; // The depth buffer for the frame buffer object
-    GLuint fbo_texture; // The texture object to write our frame buffer object
+    GLuint fbo1; // The frame buffer object
+    GLuint fbo_depth1; // The depth buffer for the frame buffer object
+    GLuint fbo_texture1; // The texture object to write our frame buffer object
+    GLuint fbo2; // The frame buffer object
+    GLuint fbo_depth2; // The depth buffer for the frame buffer object
+    GLuint fbo_texture2; // The texture object to write our frame buffer object
 
     const char* QUAD_MODEL_PATH = "..//resources//quad.obj";
     draw_data quad;
@@ -354,21 +385,21 @@ private:
     float cur_window_width() { return glutGet(GLUT_WINDOW_WIDTH); }
     float cur_window_height() { return glutGet(GLUT_WINDOW_HEIGHT); }
 
-    void init_framebuffer_depth_buf(void) {
-        glGenRenderbuffersEXT(1, &fbo_depth); // Generate one render buffer and store the ID in fbo_depth
-        glBindRenderbufferEXT(GL_RENDERBUFFER_EXT, fbo_depth); // Bind the fbo_depth render buffer
+    void init_framebuffer_depth_buf(GLuint& fbo_depth_id) {
+        glGenRenderbuffersEXT(1, &fbo_depth_id); // Generate one render buffer and store the ID in fbo_depth
+        glBindRenderbufferEXT(GL_RENDERBUFFER_EXT, fbo_depth_id); // Bind the fbo_depth render buffer
 
         glRenderbufferStorageEXT(GL_RENDERBUFFER_EXT, GL_DEPTH_COMPONENT,
                                  cur_window_width(), cur_window_height()); // Set the render buffer storage to be a depth component, with a width and height of the window
         glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT,
-                                     GL_RENDERBUFFER_EXT, fbo_depth); // Set the render buffer of this buffer to the depth buffer
+                                     GL_RENDERBUFFER_EXT, fbo_depth_id); // Set the render buffer of this buffer to the depth buffer
 
         glBindRenderbufferEXT(GL_RENDERBUFFER_EXT, 0); // Unbind the render buffer
     }
 
-    void init_framebuffer_texture(void) {
-        glGenTextures(1, &fbo_texture); // Generate one texture
-        glBindTexture(GL_TEXTURE_2D, fbo_texture); // Bind the texture fbo_texture
+    void init_framebuffer_texture(GLuint& fbo_texture_id) {
+        glGenTextures(1, &fbo_texture_id); // Generate one texture
+        glBindTexture(GL_TEXTURE_2D, fbo_texture_id); // Bind the texture fbo_texture
 
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, cur_window_width(),
                      cur_window_height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
@@ -378,17 +409,17 @@ private:
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 
-    void init_framebuffer(void) {
-        init_framebuffer_depth_buf(); // Initialize our frame buffer depth buffer
-        init_framebuffer_texture(); // Initialize our frame buffer texture
+    void init_framebuffer(GLuint& fbo_depth_id, GLuint &fbo_texture_id, GLuint& fbo_id) {
+        init_framebuffer_depth_buf(fbo_depth_id); // Initialize our frame buffer depth buffer
+        init_framebuffer_texture(fbo_texture_id); // Initialize our frame buffer texture
 
-        glGenFramebuffersEXT(1, &fbo); // Generate one frame buffer and store the ID in fbo
-        glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fbo); // Bind our frame buffer
+        glGenFramebuffersEXT(1, &fbo_id); // Generate one frame buffer and store the ID in fbo
+        glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fbo_id); // Bind our frame buffer
 
         glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT,
-                                  GL_TEXTURE_2D, fbo_texture, 0); // Attach the texture fbo_texture to the color buffer in our frame buffer
+                                  GL_TEXTURE_2D, fbo_texture_id, 0); // Attach the texture fbo_texture to the color buffer in our frame buffer
         glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT,
-                                     GL_RENDERBUFFER_EXT, fbo_depth); // Attach the depth buffer fbo_depth to our frame buffer
+                                     GL_RENDERBUFFER_EXT, fbo_depth_id); // Attach the depth buffer fbo_depth to our frame buffer
 
         GLenum status = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT); // Check that status of our generated frame buffer
         if (status != GL_FRAMEBUFFER_COMPLETE_EXT) { // If the frame buffer does not report back as complete
@@ -398,8 +429,8 @@ private:
         glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0); // Unbind our frame buffer
     }
 
-    void bind_offscreen_buffer() {
-        glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fbo); // Bind our frame buffer for rendering
+    void bind_offscreen_buffer(GLuint& fbo_id) {
+        glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fbo_id); // Bind our frame buffer for rendering
         glPushAttrib(GL_VIEWPORT_BIT | GL_ENABLE_BIT); // Push our glEnable and glViewport states
         glViewport(0, 0, DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT); // Set the size of the frame buffer view port
     }
@@ -414,7 +445,7 @@ private:
 
         mat4 const proj = perspective(45.0f, window_width / window_height, 0.1f, 100.0f);
         mat4 const model;
-        mat4 const view = lookAt(vec3(0, 0, 3), vec3(0, 0, 0), vec3(0, 1, 0));
+        mat4 const view = lookAt(vec3(0, 0, 2.4), vec3(0, 0, 0), vec3(0, 1, 0));
         mat4 const modelview = view * model;
         mat4 const mvp = proj * modelview;
 
@@ -425,8 +456,13 @@ private:
         case BOX_BLUR:
             glUniform1i(glGetUniformLocation(filtered_program, "filter_type"), BOX_BLUR);
             break;
-        case GAUSSIAN_BLUR:
-            glUniform1i(glGetUniformLocation(filtered_program, "filter_type"), GAUSSIAN_BLUR);
+        case GAUSSIAN_HORIZONTAL_BLUR:
+            glUniform1i(glGetUniformLocation(filtered_program, "filter_type"), GAUSSIAN_HORIZONTAL_BLUR);
+            glUniform1i(glGetUniformLocation(filtered_program, "gaus_radius"), gaussian_kernel_radius);
+            glUniform1f(glGetUniformLocation(filtered_program, "gaus_variance"), gaussian_variance);
+            break;
+        case GAUSSIAN_VERTICAL_BLUR:
+            glUniform1i(glGetUniformLocation(filtered_program, "filter_type"), GAUSSIAN_VERTICAL_BLUR);
             glUniform1i(glGetUniformLocation(filtered_program, "gaus_radius"), gaussian_kernel_radius);
             glUniform1f(glGetUniformLocation(filtered_program, "gaus_variance"), gaussian_variance);
             break;
@@ -435,7 +471,7 @@ private:
             glUniform1f(glGetUniformLocation(filtered_program, "sobel_threshold"), sobel_threshold);
             break;
         default:
-            glUniform1i(glGetUniformLocation(filtered_program, "filter_type"), NO_FILTER);
+            glUniform1i(glGetUniformLocation(filtered_program, "filter_type"), 0);
             break;
         }
 
@@ -579,7 +615,7 @@ void apply_box_filter_callback(void* prog_state_wrapper) {
 
 void apply_gaussian_filter_callback(void* prog_state_wrapper) {
     program_state* ps = static_cast<program_state*>(prog_state_wrapper);
-    ps->on_apply_filter_event(GAUSSIAN_BLUR);
+    ps->on_apply_filter_event(GAUSSIAN_HORIZONTAL_BLUR);
 }
 
 void apply_sobel_filter_callback(void* prog_state_wrapper) {
