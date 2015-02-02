@@ -4,6 +4,6 @@
 *.files
 *.includes
 build/
-libs/
 tutorial/
 hw30_old/
+FreeImage/
