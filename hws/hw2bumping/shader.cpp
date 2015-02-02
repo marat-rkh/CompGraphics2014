@@ -1,6 +1,7 @@
 #include "shader.h"
 
-GLuint create_shader( GLenum shader_type, char const * file_name ) {
+GLuint create_shader( GLenum shader_type, char const * file_name )
+{
    ifstream f_in(file_name, std::ios::binary);
 
    if (!f_in.good())
@@ -37,7 +38,8 @@ GLuint create_shader( GLenum shader_type, char const * file_name ) {
    return shader;
 }
 
-GLuint create_program( GLuint vs, GLuint fs ) {
+GLuint create_program( GLuint vs, GLuint fs )
+{
    GLuint const program = glCreateProgram();
    glAttachShader(program, vs);
    glAttachShader(program, fs);

@@ -1,11 +1,10 @@
 #ifndef UTILS_H
 #define UTILS_H
 
-#include <exception>
-#include <string>
 #include "common.h"
+#include <exception>
 #include <FreeImage.h>
-#include "tiny_obj_loader.h"
+#include "libs/tiny_obj_loader.h"
 
 class msg_exception : public std::exception {
     std::string what_;
@@ -13,6 +12,31 @@ public:
     msg_exception(std::string const& msg): what_(msg) {}
 
     const char* what() const throw() { return what_.c_str(); }
+};
+
+struct draw_data {
+    vector<GLfloat> vertices;
+    vector<GLfloat> tex_mapping;
+    vector<GLfloat> normals;
+    vector<GLfloat> tangents;
+    vector<GLfloat> bitangents;
+
+    size_t vertices_num() const { return vertices.size() / 3; }
+
+    void* vertices_data() { return vertices.data(); }
+    size_t vertices_data_size() const { return vertices.size() * sizeof(GLfloat); }
+
+    void* tex_mapping_data() { return tex_mapping.data(); }
+    size_t tex_mapping_data_size() const { return tex_mapping.size() * sizeof(GLfloat); }
+
+    void* normals_data() { return normals.data(); }
+    size_t normals_data_size() const { return normals.size() * sizeof(GLfloat); }
+
+    void* tangents_data() { return tangents.data(); }
+    size_t tangents_data_size() const { return tangents.size() * sizeof(GLfloat); }
+
+    void* bitangents_data() { return bitangents.data(); }
+    size_t bitangents_data_size() const { return bitangents.size() * sizeof(GLfloat); }
 };
 
 struct texture_data {
@@ -75,11 +99,7 @@ public:
         return tex_data;
     }
 
-    static void read_obj_file(char const* obj_file_path,
-                              vector<GLfloat>& vertices,
-                              vector<GLfloat>& tex_mapping,
-                              vector<GLfloat>& normals)
-    {
+    static void read_obj_file(char const* obj_file_path, draw_data& out) {
         vector<tinyobj::shape_t> shapes;
         vector<tinyobj::material_t> materials;
         string err = tinyobj::LoadObj(shapes, materials, obj_file_path);
@@ -91,19 +111,31 @@ public:
         }
         for (size_t i = 0; i < shapes[0].mesh.indices.size(); ++i) {
             int ind = shapes[0].mesh.indices[i];
-            vertices.push_back(shapes[0].mesh.positions[3 * ind + 0]);
-            vertices.push_back(shapes[0].mesh.positions[3 * ind + 1]);
-            vertices.push_back(shapes[0].mesh.positions[3 * ind + 2]);
+            out.vertices.push_back(shapes[0].mesh.positions[3 * ind + 0]);
+            out.vertices.push_back(shapes[0].mesh.positions[3 * ind + 1]);
+            out.vertices.push_back(shapes[0].mesh.positions[3 * ind + 2]);
 
-            tex_mapping.push_back(shapes[0].mesh.texcoords[2 * ind + 0]);
-            tex_mapping.push_back(shapes[0].mesh.texcoords[2 * ind + 1]);
+            out.tex_mapping.push_back(shapes[0].mesh.texcoords[2 * ind + 0]);
+            out.tex_mapping.push_back(shapes[0].mesh.texcoords[2 * ind + 1]);
 
-            normals.push_back(shapes[0].mesh.normals[3 * ind + 0]);
-            normals.push_back(shapes[0].mesh.normals[3 * ind + 1]);
-            normals.push_back(shapes[0].mesh.normals[3 * ind + 2]);
+            out.normals.push_back(shapes[0].mesh.normals[3 * ind + 0]);
+            out.normals.push_back(shapes[0].mesh.normals[3 * ind + 1]);
+            out.normals.push_back(shapes[0].mesh.normals[3 * ind + 2]);
         }
     }
 
+    static void compute_tangent_basis(draw_data& data) {
+        vector<vec3> verts = to_vec3_vector(data.vertices);
+        vector<vec2> tex = to_vec2_vector(data.tex_mapping);
+        vector<vec3> norms = to_vec3_vector(data.normals);
+        vector<vec3> tans;
+        vector<vec3> bitans;
+        compute_tangent_basis_impl(verts, tex, norms, tans, bitans);
+        to_floats_vector(tans, data.tangents);
+        to_floats_vector(bitans, data.bitangents);
+    }
+
+private:
     static vector<vec2> to_vec2_vector(vector<GLfloat>& in) {
         if(in.size() % 2 != 0) {
             throw msg_exception("to_vec2_vector() wrong input size");
@@ -134,70 +166,37 @@ public:
         }
     }
 
-    static void computeTangentBasisAdapter(
-            std::vector<GLfloat> & vertices,
-            std::vector<GLfloat> & uvs,
-            std::vector<GLfloat> & normals,
-            // outputs
-            std::vector<GLfloat> & tangents,
-            std::vector<GLfloat> & bitangents)
-    {
-        vector<vec3> verts = to_vec3_vector(vertices);
-        vector<vec2> uvs_ = to_vec2_vector(uvs);
-        vector<vec3> norms = to_vec3_vector(normals);
-        vector<vec3> tans;
-        vector<vec3> bitans;
-        debug("computation started");
-        computeTangentBasis(verts, uvs_, norms, tans, bitans);
-        debug("computation finished");
-        to_floats_vector(tans, tangents);
-        to_floats_vector(bitans, bitangents);
-    }
-
-    static void computeTangentBasis(
-            // inputs
-            std::vector<glm::vec3> & vertices,
-            std::vector<glm::vec2> & uvs,
-            std::vector<glm::vec3> & normals,
-            // outputs
-            std::vector<glm::vec3> & tangents,
-            std::vector<glm::vec3> & bitangents)
+    static void compute_tangent_basis_impl(
+            vector<vec3> & vertices,
+            vector<vec2> & uvs,
+            vector<vec3> & normals,
+            vector<vec3> & tangents,
+            vector<vec3> & bitangents)
     {
         for (unsigned int i = 0; i < vertices.size(); i += 3 ) {
-            // Shortcuts for vertices
-            glm::vec3 & v0 = vertices[i + 0];
-            glm::vec3 & v1 = vertices[i + 1];
-            glm::vec3 & v2 = vertices[i + 2];
-            // Shortcuts for UVs
-            glm::vec2 & uv0 = uvs[i + 0];
-            glm::vec2 & uv1 = uvs[i + 1];
-            glm::vec2 & uv2 = uvs[i + 2];
-            // Edges of the triangle : postion delta
-            glm::vec3 deltaPos1 = v1 - v0;
-            glm::vec3 deltaPos2 = v2 - v0;
-            // UV delta
-            glm::vec2 deltaUV1 = uv1 - uv0;
-            glm::vec2 deltaUV2 = uv2 - uv0;
+            vec3 & v0 = vertices[i + 0];
+            vec3 & v1 = vertices[i + 1];
+            vec3 & v2 = vertices[i + 2];
+            vec2 & uv0 = uvs[i + 0];
+            vec2 & uv1 = uvs[i + 1];
+            vec2 & uv2 = uvs[i + 2];
+
+            vec3 deltaPos1 = v1 - v0;
+            vec3 deltaPos2 = v2 - v0;
+            vec2 deltaUV1 = uv1 - uv0;
+            vec2 deltaUV2 = uv2 - uv0;
             float r = 1.0f / (deltaUV1.x * deltaUV2.y - deltaUV1.y * deltaUV2.x);
-            glm::vec3 tangent = (deltaPos1 * deltaUV2.y   - deltaPos2 * deltaUV1.y) * r;
-            glm::vec3 bitangent = (deltaPos2 * deltaUV1.x   - deltaPos1 * deltaUV2.x) * r;
-            // Set the same tangent for all three vertices of the triangle.
-            // They will be merged later, in vboindexer.cpp
+            vec3 tangent = (deltaPos1 * deltaUV2.y   - deltaPos2 * deltaUV1.y) * r;
+            vec3 bitangent = (deltaPos2 * deltaUV1.x   - deltaPos1 * deltaUV2.x) * r;
+
             tangents.push_back(tangent);
             tangents.push_back(tangent);
             tangents.push_back(tangent);
-            // Same thing for binormals
+
             bitangents.push_back(bitangent);
             bitangents.push_back(bitangent);
             bitangents.push_back(bitangent);
         }
-    }
-
-    static void set_vertex_attr_ptr(GLuint program, vertex_attr const& attr) {
-        GLuint location = glGetAttribLocation(program, attr.name);
-        glEnableVertexAttribArray(location);
-        glVertexAttribPointer(location, attr.size, attr.type,
-                              attr.normalized, attr.stride, attr.pointer);
     }
 };
 
