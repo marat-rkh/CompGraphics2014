@@ -21,7 +21,8 @@ void main() {
     UV = vert_uv;
 
     vec3 vert_normal_cameraspace = model_view3 * normalize(vert_normal);
-    vec3 vert_tangent_cameraspace = model_view3 * normalize(vert_tangent);
+    vec3 vert_true_tangent = vert_tangent - dot(vert_tangent, vert_normal) * vert_normal;
+    vec3 vert_tangent_cameraspace = model_view3 * normalize(vert_true_tangent);
     vec3 vert_bitangent_cameraspace = model_view3 * normalize(vert_bitangent);
     mat3 TBN = transpose(mat3(vert_tangent_cameraspace, vert_bitangent_cameraspace, vert_normal_cameraspace));
 
